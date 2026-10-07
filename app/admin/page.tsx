@@ -37,10 +37,19 @@ import {
   X,
   FileCheck2,
   Bell,
+  RotateCcw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSharedApplication } from "@/lib/vendor-application-state";
-import { useStoredApplications } from "@/lib/application-store";
+import {
+  useStoredApplications,
+  useDeletedApplicationIds,
+  getApplication,
+  updateApplication,
+  createApplication,
+  deleteApplication,
+  resetDeletedAdminApplications,
+} from "@/lib/application-store";
 
 interface ApplicationRecord {
   id: string;
@@ -152,11 +161,20 @@ function mapStoreStatusToAdminStatus(
 }
 
 export default function AdminDashboardPage() {
-  const { application: sharedApp, updateStatus } = useSharedApplication();
+  const {
+    application: sharedApp,
+    updateStatus,
+    resetDemo: resetSharedDemo,
+  } = useSharedApplication();
   const storedApplications = useStoredApplications();
+  const deletedApplicationIds = useDeletedApplicationIds();
   const [selectedApp, setSelectedApp] = useState<ApplicationRecord | null>(null);
   const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
   const [feedbackNotice, setFeedbackNotice] = useState<string | null>(null);
+
+  const deletedSet = new Set(
+    deletedApplicationIds.map((id) => id.trim().toLowerCase())
+  );
 
   // Map real applications from shared localStorage store
   const storedRecords: (ApplicationRecord & { sortTime: number })[] =
@@ -183,7 +201,7 @@ export default function AdminDashboardPage() {
     {
       ...RECENT_APPLICATIONS[0],
       status:
-        sharedApp.id === RECENT_APPLICATIONS[0].id
+        sharedApp.id.toLowerCase() === RECENT_APPLICATIONS[0].id.toLowerCase()
           ? (sharedApp.adminStatus as ApplicationRecord["status"])
           : RECENT_APPLICATIONS[0].status,
       sortTime: new Date("2026-10-06T10:00:00Z").getTime(),
@@ -207,10 +225,31 @@ export default function AdminDashboardPage() {
   ];
 
   // Merge stored applications and seed mock data, sorted by submittedAt descending
-  const recentApplications = [
+  const allRecent = [
     ...storedRecords,
     ...mockRecordsWithTimestamps.filter((m) => !storedIds.has(m.id.toLowerCase())),
   ].sort((a, b) => b.sortTime - a.sortTime);
+
+  // Exclude rejected applications and deleted records from the Recent Applications queue
+  const recentApplications = allRecent.filter(
+    (app) => app.status !== "Rejected" && !deletedSet.has(app.id.toLowerCase())
+  );
+
+  const handleResetDemo = () => {
+    resetSharedDemo();
+    resetDeletedAdminApplications();
+    [
+      "BVR-2026-001248",
+      "BVR-2026-001247",
+      "BVR-2026-001246",
+      "BVR-2026-001245",
+      "BVR-2026-001244",
+    ].forEach((id) => {
+      deleteApplication(id);
+    });
+    setFeedbackNotice("Demo state reset: Initial application queue restored.");
+    setTimeout(() => setFeedbackNotice(null), 4000);
+  };
 
   const activeSelectedApp = selectedApp
     ? selectedApp.id === sharedApp.id
@@ -284,6 +323,17 @@ export default function AdminDashboardPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handleResetDemo}
+            className="text-xs font-semibold text-slate-700 hover:text-slate-900 border-slate-300 hover:bg-slate-100 cursor-pointer gap-1.5 shadow-2xs"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>Reset Demo</span>
+          </Button>
+
           <Link
             href="/admin/applications"
             className={cn(
@@ -604,8 +654,18 @@ export default function AdminDashboardPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {recentApplications.map((app) => (
-                      <TableRow key={app.id}>
+                    {recentApplications.length === 0 ? (
+                      <TableRow>
+                        <TableCell
+                          colSpan={7}
+                          className="text-center py-8 text-slate-500 text-xs sm:text-sm"
+                        >
+                          No recent pending applications queued for licensing evaluation.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      recentApplications.map((app) => (
+                        <TableRow key={app.id}>
                         <TableCell className="font-mono text-xs font-bold text-slate-900">
                           {app.id}
                         </TableCell>
@@ -650,7 +710,7 @@ export default function AdminDashboardPage() {
                           </div>
                         </TableCell>
                       </TableRow>
-                    ))}
+                    )))}
                   </TableBody>
                 </Table>
               </div>
@@ -838,6 +898,12 @@ export default function AdminDashboardPage() {
                       if (activeSelectedApp.id === sharedApp.id) {
                         updateStatus("approved");
                       }
+                      const existing = getApplication(activeSelectedApp.id);
+                      if (existing) {
+                        updateApplication(activeSelectedApp.id, {
+                          status: "approved",
+                        });
+                      }
                       handleAction(`Application ${activeSelectedApp.id} was marked as Approved.`);
                     }}
                     className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold cursor-pointer gap-1"
@@ -852,6 +918,12 @@ export default function AdminDashboardPage() {
                       if (activeSelectedApp.id === sharedApp.id) {
                         updateStatus("needs-correction");
                       }
+                      const existing = getApplication(activeSelectedApp.id);
+                      if (existing) {
+                        updateApplication(activeSelectedApp.id, {
+                          status: "needs_correction",
+                        });
+                      }
                       handleAction(`Correction request sent for ${activeSelectedApp.id}.`);
                     }}
                     className="text-amber-800 border-amber-300 hover:bg-amber-50 text-xs font-semibold cursor-pointer gap-1"
@@ -865,6 +937,49 @@ export default function AdminDashboardPage() {
                     onClick={() => {
                       if (activeSelectedApp.id === sharedApp.id) {
                         updateStatus("rejected");
+                      }
+                      const existing = getApplication(activeSelectedApp.id);
+                      if (existing) {
+                        updateApplication(activeSelectedApp.id, {
+                          status: "rejected",
+                        });
+                      } else {
+                        createApplication({
+                          id: activeSelectedApp.id,
+                          applicationNumber: activeSelectedApp.id,
+                          status: "rejected",
+                          business: {
+                            businessName: activeSelectedApp.businessName,
+                          },
+                          owner: { ownerName: activeSelectedApp.owner },
+                          contact: {
+                            contactNumber: activeSelectedApp.contact,
+                            emailAddress: activeSelectedApp.email,
+                          },
+                          address: {
+                            houseNo: "",
+                            street: "",
+                            barangay: activeSelectedApp.barangay,
+                            city: "Butuan City",
+                            province: "Agusan del Norte",
+                            region: "Caraga",
+                            country: "Philippines",
+                          },
+                          documents: [],
+                          statusHistory: [
+                            {
+                              id: `hist-${Date.now()}`,
+                              previousStatus: null,
+                              newStatus: "rejected",
+                              timestamp: new Date().toISOString(),
+                              action: "Application Rejected",
+                              actionBy: "Admin",
+                            },
+                          ],
+                          submittedAt: new Date().toISOString(),
+                          updatedAt: new Date().toISOString(),
+                          createdAt: new Date().toISOString(),
+                        });
                       }
                       handleAction(`Application ${activeSelectedApp.id} was rejected.`);
                     }}

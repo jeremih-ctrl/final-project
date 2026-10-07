@@ -28,6 +28,7 @@ import {
   Info,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { addAdminNotification } from "@/lib/notifications-data";
 
 type DocStatus = "Submitted" | "Under Review" | "Accepted" | "Needs Replacement";
 
@@ -81,6 +82,22 @@ export default function DocumentsPage() {
       setDocStatus("Submitted");
       setReplaceDialogOpen(false);
       setUploadSuccessMsg("Document attached to registration record.");
+
+      // Workflow notification to Admin
+      addAdminNotification({
+        type: "document-uploaded",
+        title: "Government ID Submitted for Verification",
+        message: "A government ID has been submitted and is ready for verification.",
+        fullMessage: `A new government ID (${fileName}) has been submitted for application BVR-2026-001248 and is ready for verification.`,
+        applicationNumber: "BVR-2026-001248",
+        vendorName: "Juan's Food Stall",
+        status: "Under Review",
+        actionLabel: "Review Documents",
+        actionUrl: "/admin/documents",
+        href: "/admin/documents",
+        priority: "normal",
+      });
+
       setTimeout(() => setUploadSuccessMsg(null), 3000);
     }, 1000);
   };

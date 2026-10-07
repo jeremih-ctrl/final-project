@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -31,13 +31,18 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetTrigger, SheetContent } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
+import { useAdminAuth } from "@/lib/demo-auth";
+import { useAdminNotifications } from "@/lib/notifications-data";
 
 interface AdminSidebarProps {
   pathname: string;
   onNavigate?: () => void;
+  onLogout?: () => void;
 }
 
-function AdminSidebar({ pathname, onNavigate }: AdminSidebarProps) {
+function AdminSidebar({ pathname, onNavigate, onLogout }: AdminSidebarProps) {
+  const { unreadCount } = useAdminNotifications();
+
   const navItems = [
     {
       label: "Dashboard",
@@ -75,7 +80,7 @@ function AdminSidebar({ pathname, onNavigate }: AdminSidebarProps) {
       href: "/admin/notifications",
       icon: Bell,
       active: pathname.startsWith("/admin/notifications"),
-      badge: "2",
+      badge: unreadCount > 0 ? String(unreadCount) : undefined,
     },
     {
       label: "Settings",
@@ -159,14 +164,17 @@ function AdminSidebar({ pathname, onNavigate }: AdminSidebarProps) {
           <span>Help / Support</span>
         </Link>
 
-        <Link
-          href="/"
-          onClick={onNavigate}
-          className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium text-rose-400 hover:bg-rose-950/40 hover:text-rose-300 transition-colors"
+        <button
+          type="button"
+          onClick={() => {
+            if (onNavigate) onNavigate();
+            if (onLogout) onLogout();
+          }}
+          className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium text-rose-400 hover:bg-rose-950/40 hover:text-rose-300 transition-colors cursor-pointer text-left"
         >
           <LogOut className="w-4 h-4 shrink-0" />
           <span>Logout</span>
-        </Link>
+        </button>
       </div>
     </div>
   );
@@ -180,6 +188,21 @@ export default function AdminLayout({
   const pathname = usePathname();
   const router = useRouter();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const { session, isLoading, logout } = useAdminAuth();
+
+  const isLoginPage = pathname === "/admin/login";
+
+  // Redirect to admin login if unauthenticated
+  useEffect(() => {
+    if (!isLoginPage && !isLoading && !session) {
+      router.replace("/admin/login");
+    }
+  }, [isLoginPage, isLoading, session, router]);
+
+  // Standalone login page without sidebar layout
+  if (isLoginPage) {
+    return <>{children}</>;
+  }
 
   // Dynamic header page title based on current route
   const getHeaderTitle = (path: string) => {
@@ -194,16 +217,25 @@ export default function AdminLayout({
 
   const headerTitle = getHeaderTitle(pathname);
 
-  // Standalone login page without sidebar layout
-  if (pathname === "/admin/login") {
-    return <>{children}</>;
+  // Protected route guard: Do not display admin dashboard or administrator information until authenticated
+  if (isLoading || !session) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-3 border-blue-500 border-t-transparent rounded-full animate-spin" />
+          <p className="text-xs font-medium text-slate-400">
+            Verifying administrator credentials...
+          </p>
+        </div>
+      </div>
+    );
   }
 
   return (
     <div className="min-h-screen bg-slate-50/80 text-slate-900 flex">
       {/* Desktop Sidebar (visible on lg screens) */}
       <aside className="hidden lg:flex w-64 flex-col fixed inset-y-0 z-30 shadow-xs border-r border-slate-800/90">
-        <AdminSidebar pathname={pathname} />
+        <AdminSidebar pathname={pathname} onLogout={logout} />
       </aside>
 
       {/* Main Content Area (offset by sidebar width on desktop) */}
@@ -228,6 +260,7 @@ export default function AdminLayout({
                 <AdminSidebar
                   pathname={pathname}
                   onNavigate={() => setMobileMenuOpen(false)}
+                  onLogout={logout}
                 />
               </SheetContent>
             </Sheet>
@@ -276,14 +309,23 @@ export default function AdminLayout({
                       size="sm"
                       className="bg-slate-900 text-white font-bold border border-slate-700"
                     >
-                      <AvatarFallback>AD</AvatarFallback>
+                      <AvatarFallback>
+                        {session.name
+                          ? session.name
+                              .split(" ")
+                              .map((n) => n[0])
+                              .join("")
+                              .slice(0, 2)
+                              .toUpperCase()
+                          : "AD"}
+                      </AvatarFallback>
                     </Avatar>
                     <div className="text-left hidden md:block">
                       <span className="text-xs font-bold text-slate-900 block leading-tight">
-                        Administrator
+                        {session.name}
                       </span>
                       <span className="text-[11px] text-slate-500 font-medium block leading-tight">
-                        City Licensing
+                        {session.title}
                       </span>
                     </div>
                   </button>
@@ -296,10 +338,10 @@ export default function AdminLayout({
                 <DropdownMenuGroup>
                   <DropdownMenuLabel className="font-semibold text-xs px-2 py-1.5 text-slate-700">
                     <div className="font-bold text-sm text-slate-900">
-                      Administrator
+                      {session.name}
                     </div>
                     <div className="text-xs font-normal text-slate-500">
-                      admin@butuan.gov.ph
+                      {session.email}
                     </div>
                   </DropdownMenuLabel>
                 </DropdownMenuGroup>
@@ -321,7 +363,7 @@ export default function AdminLayout({
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   variant="destructive"
-                  onClick={() => router.push("/")}
+                  onClick={logout}
                   className="text-xs py-2 text-rose-600 font-medium cursor-pointer"
                 >
                   <LogOut className="w-4 h-4 mr-2 text-rose-500" />

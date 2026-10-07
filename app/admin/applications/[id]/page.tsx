@@ -2,6 +2,7 @@
 
 import { useState, use } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   Building2,
@@ -23,10 +24,11 @@ import {
   Stamp,
   Award,
   Sparkles,
+  Trash2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -42,7 +44,18 @@ import {
   useSharedApplication,
   statusToAdminLabel,
 } from "@/lib/vendor-application-state";
-import { getApplication } from "@/lib/application-store";
+import {
+  getApplication,
+  updateApplication,
+  createApplication,
+  deleteApplication,
+  useDeletedApplicationIds,
+  deleteAdminApplicationRecord,
+  resetDeletedAdminApplications,
+} from "@/lib/application-store";
+import { getApplicationById } from "@/lib/admin-applications-data";
+import { addVendorNotification } from "@/lib/notifications-data";
+
 
 let activityCounter = 1000;
 function nextActivityId(): string {
@@ -186,35 +199,32 @@ function createInitialApplicationState(
     };
   }
 
+  const mock = getApplicationById(appId);
   return {
-    applicationNumber: appId,
-    businessName: "Juan's Food Stall",
-    ownerName: "Juan Dela Cruz",
-    businessDescription:
-      "Local food vendor serving affordable meals and snacks.",
-    contactNumber: "09XXXXXXXXX",
-    email: "juan@email.com",
-    address: {
-      houseNumber: "123",
-      street: "J.C. Aquino Avenue",
-      barangay: "Baan KM 3",
-      city: "Butuan City",
-      province: "Agusan del Norte",
-      region: "Caraga",
-      country: "Philippines",
-    },
-    barangay: "Baan KM 3",
-    submittedDate: "October 6, 2026",
-    status: "Under Review",
-    governmentIdStatus: "Submitted",
+    applicationNumber: mock.id,
+    businessName: mock.businessName,
+    ownerName: mock.owner,
+    businessDescription: mock.businessDescription,
+    contactNumber: mock.contactNumber,
+    email: mock.email,
+    address: mock.address,
+    barangay: mock.barangay,
+    submittedDate: mock.submitted,
+    status: mock.status,
+    governmentIdStatus:
+      mock.governmentId?.status === "Verified"
+        ? "Verified"
+        : mock.governmentId?.status === "Replacement Requested"
+        ? "Needs Replacement"
+        : "Submitted",
     governmentIdDoc: {
-      filename: "government-id.pdf",
-      idType: "Philippine National ID (PhilSys)",
-      uploadedAt: "October 6, 2026",
-      submitted: true,
+      filename: mock.governmentId?.filename || "government-id.pdf",
+      idType: mock.governmentId?.idType || "Philippine National ID",
+      uploadedAt: mock.governmentId?.uploadedAt || mock.submitted,
+      submitted: Boolean(mock.governmentId?.submitted),
     },
-    remarks: "",
-    vendorId: null,
+    remarks: mock.remarks || "",
+    vendorId: mock.vendorId || null,
     checklist: {
       businessInfo: false,
       ownerInfo: false,
@@ -222,23 +232,13 @@ function createInitialApplicationState(
       businessAddress: false,
       governmentId: false,
     },
-    // Initial activity: newest first
-    activity: [
-      {
-        id: "act-2",
-        title: "Application Under Review",
-        date: "October 6, 2026",
-        description: "Administrator started reviewing the application.",
-        type: "review",
-      },
-      {
-        id: "act-1",
-        title: "Application Submitted",
-        date: "October 6, 2026",
-        description: "Vendor submitted the registration application.",
-        type: "submission",
-      },
-    ],
+    activity: (mock.activityTimeline || []).map((item) => ({
+      id: item.id,
+      title: item.title,
+      date: item.date,
+      description: item.description,
+      type: item.type,
+    })),
   };
 }
 
@@ -247,8 +247,15 @@ interface PageProps {
 }
 
 export default function AdminApplicationReviewPage({ params }: PageProps) {
+  const router = useRouter();
   const unwrappedParams = use(params);
   const applicationId = unwrappedParams?.id || "BVR-2026-001248";
+
+  // Check if application has been deleted
+  const deletedApplicationIds = useDeletedApplicationIds();
+  const isDeleted = deletedApplicationIds.some(
+    (id) => id.trim().toLowerCase() === applicationId.trim().toLowerCase()
+  );
 
   // 1. Unified local state
   const [localState, setLocalState] = useState<ReviewApplicationState>(() =>
@@ -296,7 +303,9 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
   const [approveDialogOpen, setApproveDialogOpen] = useState(false);
   const [correctionDialogOpen, setCorrectionDialogOpen] = useState(false);
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [docPreviewOpen, setDocPreviewOpen] = useState(false);
+
 
   const [correctionInput, setCorrectionInput] = useState(
     "Please provide a clearer business address and replace the submitted government ID image with a readable copy."
@@ -427,6 +436,31 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
       updateSharedStatus("Approved", { adminRemarks: appState.remarks });
     }
 
+    const existingStoredApprove = getApplication(appState.applicationNumber);
+    if (existingStoredApprove) {
+      updateApplication(appState.applicationNumber, {
+        status: "approved",
+        adminRemarks: appState.remarks,
+        vendorId: assignedVendorId,
+      });
+    }
+
+    addVendorNotification({
+      type: "application-approved",
+      title: "Vendor Registration Approved",
+      message:
+        "Your vendor registration application has been approved by the City Government of Butuan.",
+      fullMessage: `Your vendor registration application ${appState.applicationNumber} has been approved by the City Government of Butuan. Vendor ID ${assignedVendorId} has been issued.`,
+      applicationNumber: appState.applicationNumber,
+      vendorName: appState.businessName,
+      vendorId: assignedVendorId,
+      status: "Approved",
+      actionLabel: "View Application",
+      actionUrl: "/dashboard/my-application",
+      href: "/dashboard/my-application",
+      priority: "high",
+    });
+
     setLocalState((prev) => ({
       ...prev,
       status: "Approved",
@@ -456,6 +490,30 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
     if (isSharedTarget) {
       updateSharedStatus("Needs Correction", { adminRemarks: trimmedMsg });
     }
+
+    const existingStoredCorr = getApplication(appState.applicationNumber);
+    if (existingStoredCorr) {
+      updateApplication(appState.applicationNumber, {
+        status: "needs_correction",
+        adminRemarks: trimmedMsg,
+      });
+    }
+
+    addVendorNotification({
+      type: "correction-requested",
+      title: "Action Required: Application Correction",
+      message:
+        "Your vendor registration application requires corrections before it can be approved.",
+      fullMessage: `Your vendor registration application ${appState.applicationNumber} requires corrections before it can be approved. Remarks: "${trimmedMsg}"`,
+      remarks: trimmedMsg,
+      applicationNumber: appState.applicationNumber,
+      vendorName: appState.businessName,
+      status: "Needs Correction",
+      actionLabel: "Review Application",
+      actionUrl: "/dashboard/my-application/correction",
+      href: "/dashboard/my-application/correction",
+      priority: "high",
+    });
 
     setRemarksDraft(null);
     setLocalState((prev) => ({
@@ -488,6 +546,82 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
       updateSharedStatus("Rejected", { adminRemarks: trimmedReason });
     }
 
+    const existingStoredRej = getApplication(appState.applicationNumber);
+    if (existingStoredRej) {
+      updateApplication(appState.applicationNumber, {
+        status: "rejected",
+        adminRemarks: trimmedReason,
+      });
+    } else {
+      createApplication({
+        id: appState.applicationNumber,
+        applicationNumber: appState.applicationNumber,
+        status: "rejected",
+        business: {
+          businessName: appState.businessName,
+          businessDescription: appState.businessDescription,
+        },
+        owner: {
+          ownerName: appState.ownerName,
+        },
+        contact: {
+          contactNumber: appState.contactNumber,
+          emailAddress: appState.email,
+        },
+        address: {
+          houseNo: appState.address.houseNumber,
+          street: appState.address.street,
+          barangay: appState.barangay,
+          city: appState.address.city || "Butuan City",
+          province: appState.address.province || "Agusan del Norte",
+          region: appState.address.region || "Caraga",
+          country: appState.address.country || "Philippines",
+        },
+        documents: appState.governmentIdDoc?.filename
+          ? [
+              {
+                id: `doc-${Date.now()}`,
+                idType: appState.governmentIdDoc.idType,
+                filename: appState.governmentIdDoc.filename,
+                uploadedAt: appState.submittedDate,
+                status: "Submitted",
+              },
+            ]
+          : [],
+        adminRemarks: trimmedReason,
+        statusHistory: [
+          {
+            id: `hist-${Date.now()}`,
+            previousStatus: null,
+            newStatus: "rejected",
+            timestamp: new Date().toISOString(),
+            remark: trimmedReason,
+            action: "Application Rejected",
+            actionBy: "Admin",
+          },
+        ],
+        submittedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+      });
+    }
+
+    addVendorNotification({
+      type: "application-rejected",
+      title: "Vendor Registration Application Rejected",
+      message:
+        "Your vendor registration application has been reviewed and rejected.",
+      fullMessage: `Your vendor registration application ${appState.applicationNumber} has been rejected by the City Government of Butuan. Reason: "${trimmedReason}"`,
+      remarks: trimmedReason,
+      applicationNumber: appState.applicationNumber,
+      vendorName: appState.businessName,
+      status: "Rejected",
+      actionLabel: "View Application",
+      actionUrl: "/dashboard/my-application",
+      href: "/dashboard/my-application",
+      priority: "high",
+    });
+
     setRemarksDraft(null);
     setLocalState((prev) => ({
       ...prev,
@@ -511,6 +645,21 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
       type: "review" as const,
     };
 
+    addVendorNotification({
+      type: "document-verified",
+      title: "Government ID Verified",
+      message:
+        "Your submitted government ID has been reviewed and verified.",
+      fullMessage: `Your submitted government ID for application ${appState.applicationNumber} has been reviewed and verified by the administrator.`,
+      applicationNumber: appState.applicationNumber,
+      vendorName: appState.businessName,
+      status: appState.status,
+      actionLabel: "View Application",
+      actionUrl: "/dashboard/my-application",
+      href: "/dashboard/my-application",
+      priority: "normal",
+    });
+
     setLocalState((prev) => ({
       ...prev,
       governmentIdStatus: "Verified",
@@ -533,6 +682,22 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
       type: "correction" as const,
     };
 
+    addVendorNotification({
+      type: "document-replacement",
+      title: "Government ID Replacement Required",
+      message:
+        "The submitted government ID could not be verified. Please provide a valid replacement document.",
+      fullMessage: `The submitted government ID for application ${appState.applicationNumber} could not be verified. Please provide a valid replacement document.`,
+      remarks: "The submitted government ID could not be verified. Please upload a clear photo or copy.",
+      applicationNumber: appState.applicationNumber,
+      vendorName: appState.businessName,
+      status: "Needs Correction",
+      actionLabel: "Update Documents",
+      actionUrl: "/dashboard/my-application/correction",
+      href: "/dashboard/my-application/correction",
+      priority: "high",
+    });
+
     setLocalState((prev) => ({
       ...prev,
       governmentIdStatus: "Needs Replacement",
@@ -542,11 +707,38 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
     showNotification("Government ID replacement requested.", "warning");
   };
 
+  // Delete handler for Rejected applications (Requirement 6)
+  const handleDeleteConfirm = () => {
+    // Safety check (Requirement 5): verify status is exactly Rejected
+    if (appState.status !== "Rejected") {
+      showNotification(
+        "Safety check failed: Only Rejected applications can be deleted.",
+        "destructive"
+      );
+      setDeleteDialogOpen(false);
+      return;
+    }
+
+    deleteAdminApplicationRecord(appState.applicationNumber);
+    setDeleteDialogOpen(false);
+    router.push("/admin/applications");
+  };
+
   // 9. Reset Demo State
   const handleResetDemo = () => {
     if (isSharedTarget) {
       resetSharedDemo();
     }
+    resetDeletedAdminApplications();
+    [
+      "BVR-2026-001248",
+      "BVR-2026-001247",
+      "BVR-2026-001246",
+      "BVR-2026-001245",
+      "BVR-2026-001244",
+    ].forEach((id) => {
+      deleteApplication(id);
+    });
     setRemarksDraft(null);
     setLocalState(createInitialApplicationState(applicationId));
     setCorrectionInput(
@@ -612,8 +804,60 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
     }
   };
 
+  if (isDeleted) {
+    return (
+      <div className="space-y-6 pb-12">
+        <div className="flex items-center gap-2 text-xs text-slate-500 bg-white p-4 rounded-xl border border-slate-200">
+          <Link
+            href="/admin/applications"
+            className="text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1 font-medium"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>Back to Applications</span>
+          </Link>
+          <span>/</span>
+          <span className="font-mono text-slate-700">{applicationId}</span>
+        </div>
+
+        <div className="bg-white p-8 rounded-2xl border border-slate-200 text-center space-y-4 max-w-lg mx-auto mt-8 shadow-xs">
+          <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto">
+            <Trash2 className="w-6 h-6" />
+          </div>
+          <div>
+            <h2 className="text-lg font-bold text-slate-900">Application Deleted</h2>
+            <p className="text-xs sm:text-sm text-slate-500 mt-1">
+              Application <span className="font-mono font-bold text-slate-700">{applicationId}</span> was removed from the active application list.
+            </p>
+          </div>
+          <div className="flex items-center justify-center gap-3 pt-2">
+            <Link
+              href="/admin/applications"
+              className={cn(
+                buttonVariants({ variant: "outline", size: "sm" }),
+                "rounded-xl text-xs font-semibold cursor-pointer"
+              )}
+            >
+              <ArrowLeft className="w-3.5 h-3.5 mr-1.5" />
+              Back to Applications
+            </Link>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleResetDemo}
+              className="rounded-xl text-xs font-semibold text-blue-700 border-blue-200 hover:bg-blue-50 cursor-pointer"
+            >
+              <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
+              Reset Demo
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 pb-12">
+
       {/* Page Header & Navigation */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-5 rounded-2xl border border-slate-200/90 shadow-2xs">
         <div className="space-y-1">
@@ -1777,6 +2021,47 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
               )}
             </CardContent>
           </Card>
+
+          {/* Danger Zone Card (Requirement 6 - shown only when status is Rejected) */}
+          {appState.status === "Rejected" && (
+            <Card className="bg-rose-50/40 border border-rose-300 rounded-2xl shadow-xs overflow-hidden">
+              <CardHeader className="p-5 pb-3 border-b border-rose-100 flex flex-row items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-rose-100 text-rose-700 flex items-center justify-center">
+                    <AlertTriangle className="w-4 h-4" />
+                  </div>
+                  <CardTitle className="text-base font-bold text-rose-900">
+                    Danger Zone
+                  </CardTitle>
+                </div>
+                <Badge className="bg-rose-100 text-rose-800 border-rose-200 text-[11px] font-semibold">
+                  Rejected Application
+                </Badge>
+              </CardHeader>
+
+              <CardContent className="p-5 space-y-3">
+                <div>
+                  <h4 className="text-sm font-bold text-slate-900">
+                    Delete Rejected Application
+                  </h4>
+                  <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                    Permanently delete this rejected application from the records. Once deleted, this application will be removed from the current application list and cannot be undone.
+                  </p>
+                </div>
+
+                <div className="pt-1">
+                  <Button
+                    type="button"
+                    onClick={() => setDeleteDialogOpen(true)}
+                    className="w-full h-10 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs sm:text-sm cursor-pointer gap-2 rounded-xl shadow-xs"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    <span>Delete Application</span>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
 
@@ -2161,6 +2446,65 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
               className="text-xs font-semibold"
             >
               Close Preview
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ================= DELETE CONFIRMATION DIALOG ================= */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent className="sm:max-w-md bg-white rounded-2xl p-6 shadow-xl border border-slate-200">
+          <DialogHeader>
+            <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center mb-1">
+              <Trash2 className="w-5 h-5 text-rose-600" />
+            </div>
+            <DialogTitle className="text-lg font-bold text-slate-900">
+              Delete Application?
+            </DialogTitle>
+            <DialogDescription className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+              Are you sure you want to delete application{" "}
+              <span className="font-mono font-bold text-slate-900">
+                {appState.applicationNumber}
+              </span>
+              ? This application will be removed from the current application list and this action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-2">
+            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/90 text-xs sm:text-sm space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Business Name:</span>
+                <span className="font-bold text-slate-900">{appState.businessName}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Owner:</span>
+                <span className="text-slate-800">{appState.ownerName}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Status:</span>
+                <Badge className="bg-slate-100 text-slate-800 border-slate-300 text-[11px] font-semibold">
+                  <span className="w-1.5 h-1.5 rounded-full bg-slate-500 mr-1 inline-block" />
+                  {appState.status}
+                </Badge>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setDeleteDialogOpen(false)}
+              className="text-xs font-semibold rounded-xl h-9"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={handleDeleteConfirm}
+              className="text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white rounded-xl h-9 cursor-pointer"
+            >
+              Delete Application
             </Button>
           </DialogFooter>
         </DialogContent>

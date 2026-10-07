@@ -53,6 +53,10 @@ import {
   generateNextApplicationNumber,
 } from "@/lib/application-store";
 import { VendorApplication } from "@/lib/types/vendor-application";
+import {
+  addAdminNotification,
+  addVendorNotification,
+} from "@/lib/notifications-data";
 
 const STEPS = [
   { id: 1, name: "Business", title: "Business Information" },
@@ -62,17 +66,7 @@ const STEPS = [
   { id: 5, name: "Review", title: "Review & Submit" },
 ];
 
-const SAMPLE_BARANGAYS = [
-  "Baan KM 3",
-  "Ampayon",
-  "Agusan Pequeño",
-  "Libertad",
-  "Leon Kilat",
-  "San Vicente",
-  "Villa Kananga",
-  "Urduja",
-  "Doongan",
-];
+import { BUTUAN_BARANGAYS } from "@/lib/barangays";
 
 const ID_TYPES = [
   "Driver's License",
@@ -412,6 +406,38 @@ export default function RegisterPage() {
       };
 
       createApplication(newApp);
+
+      // Workflow notification to Admin
+      addAdminNotification({
+        type: "new-application",
+        title: "New Vendor Application Submitted",
+        message:
+          "A new vendor registration application has been submitted and is ready for review.",
+        fullMessage: `A new vendor registration application has been submitted by ${formData.ownerName.trim()} for ${formData.businessName.trim()} in ${formData.barangay}. Ready for review.`,
+        applicationNumber: newAppNumber,
+        vendorName: formData.businessName.trim(),
+        status: "Submitted",
+        actionLabel: "Review Application",
+        actionUrl: `/admin/applications/${newAppNumber}`,
+        href: `/admin/applications/${newAppNumber}`,
+        priority: "high",
+      });
+
+      // Workflow notification to Vendor
+      addVendorNotification({
+        type: "application-submitted",
+        title: "Application Submitted",
+        message: `Your vendor registration application ${newAppNumber} has been received by the City Government of Butuan Licensing Office.`,
+        fullMessage: `Your vendor registration application ${newAppNumber} for ${formData.businessName.trim()} has been received and entered the administrative queue.`,
+        applicationNumber: newAppNumber,
+        vendorName: formData.businessName.trim(),
+        status: "Submitted",
+        actionLabel: "View Application",
+        actionUrl: "/dashboard/my-application",
+        href: "/dashboard/my-application",
+        priority: "normal",
+      });
+
       setCreatedAppNumber(newAppNumber);
       setSuccessModalOpen(true);
     } catch (err) {
@@ -872,7 +898,10 @@ export default function RegisterPage() {
 
                   {/* Barangay Select */}
                   <div className="space-y-1.5">
-                    <label className="text-sm font-semibold text-slate-800">
+                    <label
+                      htmlFor="barangay"
+                      className="text-sm font-semibold text-slate-800"
+                    >
                       Barangay <span className="text-rose-500">*</span>
                     </label>
                     <Select
@@ -880,16 +909,17 @@ export default function RegisterPage() {
                       onValueChange={(val) => val && updateField("barangay", val)}
                     >
                       <SelectTrigger
+                        id="barangay"
                         className={cn(
                           "w-full h-11 px-3.5 bg-slate-50/50 border-slate-300 focus:bg-white text-base sm:text-sm",
                           errors.barangay &&
                             "border-rose-400 focus-visible:ring-rose-400/40 bg-rose-50/20"
                         )}
                       >
-                        <SelectValue placeholder="Select a barangay" />
+                        <SelectValue placeholder="Select your operating barangay" />
                       </SelectTrigger>
-                      <SelectContent>
-                        {SAMPLE_BARANGAYS.map((b) => (
+                      <SelectContent className="max-h-72 overflow-y-auto">
+                        {BUTUAN_BARANGAYS.map((b) => (
                           <SelectItem key={b} value={b}>
                             {b}
                           </SelectItem>

@@ -15,6 +15,7 @@ import {
   AlertCircle,
   FileText,
   SlidersHorizontal,
+  Trash2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -36,6 +37,14 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
   MOCK_APPLICATIONS,
   BARANGAY_OPTIONS,
   STATUS_OPTIONS,
@@ -43,7 +52,13 @@ import {
   type AdminApplication,
 } from "@/lib/admin-applications-data";
 import { useSharedApplication } from "@/lib/vendor-application-state";
-import { useStoredApplications } from "@/lib/application-store";
+import {
+  useStoredApplications,
+  useDeletedApplicationIds,
+  deleteApplication,
+  deleteAdminApplicationRecord,
+  resetDeletedAdminApplications,
+} from "@/lib/application-store";
 import { cn } from "@/lib/utils";
 
 function formatSubmittedDate(dateStr: string | null | undefined): string {
@@ -62,11 +77,73 @@ function formatSubmittedDate(dateStr: string | null | undefined): string {
 }
 
 export default function AdminApplicationsPage() {
-  const { application: sharedApp } = useSharedApplication();
+  const { application: sharedApp, resetDemo: resetSharedDemo } = useSharedApplication();
   const storedApplications = useStoredApplications();
+  const deletedApplicationIds = useDeletedApplicationIds();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStatus, setSelectedStatus] = useState<string>("All");
   const [selectedBarangay, setSelectedBarangay] = useState<string>("All Barangays");
+
+  // Deletion confirmation dialog state
+  const [deleteTargetApp, setDeleteTargetApp] = useState<AdminApplication | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [feedbackNotice, setFeedbackNotice] = useState<{
+    type: "success" | "warning" | "destructive" | "info";
+    message: string;
+  } | null>(null);
+
+  const handleOpenDelete = (app: AdminApplication) => {
+    setDeleteTargetApp(app);
+    setIsDeleteDialogOpen(true);
+  };
+
+  const handleCancelDelete = () => {
+    setIsDeleteDialogOpen(false);
+    setDeleteTargetApp(null);
+  };
+
+  const handleConfirmDelete = () => {
+    if (!deleteTargetApp) return;
+
+    // Safety check (Requirement 5): verify status is exactly Rejected
+    if (deleteTargetApp.status !== "Rejected") {
+      setFeedbackNotice({
+        type: "destructive",
+        message: "Safety check failed: Only Rejected applications can be deleted.",
+      });
+      setIsDeleteDialogOpen(false);
+      setDeleteTargetApp(null);
+      return;
+    }
+
+    const deletedId = deleteTargetApp.id;
+    deleteAdminApplicationRecord(deletedId);
+    setIsDeleteDialogOpen(false);
+    setDeleteTargetApp(null);
+    setFeedbackNotice({
+      type: "success",
+      message: `Application ${deletedId} has been successfully deleted.`,
+    });
+  };
+
+  const handleResetDemo = () => {
+    resetSharedDemo();
+    resetDeletedAdminApplications();
+    [
+      "BVR-2026-001248",
+      "BVR-2026-001247",
+      "BVR-2026-001246",
+      "BVR-2026-001245",
+      "BVR-2026-001244",
+    ].forEach((id) => {
+      deleteApplication(id);
+    });
+    setFeedbackNotice({
+      type: "info",
+      message: "Demo state reset: Rejected applications restored.",
+    });
+  };
+
 
   // Merge stored applications and mock seed applications
   const allApplications = useMemo(() => {
@@ -150,10 +227,15 @@ export default function AdminApplicationsPage() {
         }
       );
 
-    return [...storedMapped, ...mockMapped].sort(
-      (a, b) => b.sortTime - a.sortTime
+    const deletedSet = new Set(
+      deletedApplicationIds.map((id) => id.trim().toLowerCase())
     );
-  }, [storedApplications, sharedApp.id, sharedApp.adminStatus]);
+
+    return [...storedMapped, ...mockMapped]
+      .filter((app) => !deletedSet.has(app.id.toLowerCase()))
+      .sort((a, b) => b.sortTime - a.sortTime);
+  }, [storedApplications, sharedApp.id, sharedApp.adminStatus, deletedApplicationIds]);
+
 
   // Client-side filtering
   const filteredApplications = useMemo(() => {
@@ -274,7 +356,7 @@ export default function AdminApplicationsPage() {
           </div>
         </div>
 
-        {/* Quick summary chips */}
+        {/* Quick summary chips and Reset Demo Control */}
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <div className="px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 font-medium flex items-center gap-1.5">
             <Clock className="w-3.5 h-3.5 text-amber-600" />
@@ -288,8 +370,61 @@ export default function AdminApplicationsPage() {
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
             <span>{approvedCount} Approved</span>
           </div>
+
+          {/* Reset Demo button */}
+          <div className="p-1 rounded-xl bg-slate-50 border border-slate-200/90 flex items-center">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleResetDemo}
+              className="text-xs font-semibold text-slate-700 border-slate-300 hover:bg-slate-200 cursor-pointer gap-1.5 h-7 rounded-lg"
+            >
+              <RotateCcw className="w-3 h-3 text-slate-500" />
+              <span>Reset Demo</span>
+            </Button>
+          </div>
         </div>
       </div>
+
+      {/* User Feedback Notification */}
+      {feedbackNotice && (
+        <div
+          className={cn(
+            "p-4 rounded-xl border text-xs sm:text-sm flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 shadow-xs",
+            feedbackNotice.type === "success" &&
+              "bg-emerald-50 border-emerald-200 text-emerald-900",
+            feedbackNotice.type === "warning" &&
+              "bg-amber-50 border-amber-200 text-amber-900",
+            feedbackNotice.type === "destructive" &&
+              "bg-rose-50 border-rose-200 text-rose-900",
+            feedbackNotice.type === "info" &&
+              "bg-blue-50 border-blue-200 text-blue-900"
+          )}
+        >
+          <div className="flex items-center gap-2.5">
+            {feedbackNotice.type === "success" && (
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            )}
+            {feedbackNotice.type === "warning" && (
+              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+            )}
+            {feedbackNotice.type === "destructive" && (
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            )}
+            {feedbackNotice.type === "info" && (
+              <RotateCcw className="w-4 h-4 text-blue-600 shrink-0" />
+            )}
+            <span className="font-semibold">{feedbackNotice.message}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setFeedbackNotice(null)}
+            className="text-slate-400 hover:text-slate-700 text-xs underline cursor-pointer"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* 2. Search & Filter UX Card */}
       <Card className="bg-white border border-slate-200/90 rounded-2xl shadow-xs overflow-hidden">
@@ -504,16 +639,29 @@ export default function AdminApplicationsPage() {
 
                       {/* Action */}
                       <TableCell className="text-right whitespace-nowrap pr-6">
-                        <Link
-                          href={`/admin/applications/${app.id}`}
-                          className={cn(
-                            buttonVariants({ variant: "outline", size: "sm" }),
-                            "h-8 px-3 text-xs font-semibold text-blue-700 border-blue-200 hover:bg-blue-50 hover:text-blue-900 cursor-pointer gap-1.5 rounded-lg shadow-2xs"
+                        <div className="flex items-center justify-end gap-2">
+                          <Link
+                            href={`/admin/applications/${app.id}`}
+                            className={cn(
+                              buttonVariants({ variant: "outline", size: "sm" }),
+                              "h-8 px-3 text-xs font-semibold text-blue-700 border-blue-200 hover:bg-blue-50 hover:text-blue-900 cursor-pointer gap-1.5 rounded-lg shadow-2xs"
+                            )}
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>View</span>
+                          </Link>
+                          {app.status === "Rejected" && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleOpenDelete(app)}
+                              className="h-8 px-3 text-xs font-semibold text-rose-700 border-rose-200 bg-rose-50/50 hover:bg-rose-100 hover:text-rose-900 cursor-pointer gap-1.5 rounded-lg shadow-2xs"
+                            >
+                              <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                              <span>Delete</span>
+                            </Button>
                           )}
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                          <span>View</span>
-                        </Link>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))
@@ -523,6 +671,74 @@ export default function AdminApplicationsPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog
+        open={isDeleteDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) handleCancelDelete();
+        }}
+      >
+        <DialogContent className="sm:max-w-md bg-white rounded-2xl p-6 shadow-xl border border-slate-200">
+          <DialogHeader>
+            <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center mb-1">
+              <Trash2 className="w-5 h-5 text-rose-600" />
+            </div>
+            <DialogTitle className="text-lg font-bold text-slate-900">
+              Delete Application?
+            </DialogTitle>
+            <DialogDescription className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+              Are you sure you want to delete application{" "}
+              <span className="font-mono font-bold text-slate-900">
+                {deleteTargetApp?.id}
+              </span>
+              ? This application will be removed from the current application list and cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+
+          {deleteTargetApp && (
+            <div className="py-2">
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/90 text-xs sm:text-sm space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500">Business Name:</span>
+                  <span className="font-bold text-slate-900">
+                    {deleteTargetApp.businessName}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500">Owner:</span>
+                  <span className="text-slate-800">{deleteTargetApp.owner}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500">Status:</span>
+                  <Badge className="bg-slate-100 text-slate-800 border-slate-300 text-[11px] font-semibold">
+                    <span className="w-1.5 h-1.5 rounded-full bg-slate-500 mr-1 inline-block" />
+                    {deleteTargetApp.status}
+                  </Badge>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 sm:gap-0 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleCancelDelete}
+              className="text-xs font-semibold rounded-xl h-9"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={handleConfirmDelete}
+              className="text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white rounded-xl h-9 cursor-pointer"
+            >
+              Delete Application
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Helpful footer notes */}
       <div className="flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-2 px-1">
@@ -536,3 +752,4 @@ export default function AdminApplicationsPage() {
     </div>
   );
 }
+

@@ -477,3 +477,12 @@ export function getApplicationById(id: string): AdminApplication {
     id: id || "BVR-2026-001248",
   };
 }
+
+export {
+  useDeletedApplicationIds,
+  getDeletedApplicationIds,
+  isApplicationDeleted,
+  deleteAdminApplicationRecord,
+  resetDeletedAdminApplications,
+} from "./application-store";
+

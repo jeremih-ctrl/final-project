@@ -34,6 +34,10 @@ import {
   VendorAppStatus,
   useSharedApplication,
 } from "@/lib/vendor-application-state";
+import {
+  addAdminNotification,
+  addVendorNotification,
+} from "@/lib/notifications-data";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -334,6 +338,37 @@ export default function CorrectionFormPage() {
       setSubmitted(true);
       setStep("done");
       updateStatus("correction-submitted");
+
+      // Notify administrator of resubmitted corrections
+      addAdminNotification({
+        type: "correction-submitted",
+        title: "Application Resubmitted for Review",
+        message: "The vendor has submitted the requested corrections for review.",
+        fullMessage: `Vendor Juan Dela Cruz has submitted the requested corrections for application ${app.applicationNumber}. Status transitioned to Under Review.`,
+        applicationNumber: app.applicationNumber,
+        vendorName: "Juan's Food Stall",
+        status: "Under Review",
+        actionLabel: "Review Application",
+        actionUrl: `/admin/applications/${app.applicationNumber}`,
+        href: `/admin/applications/${app.applicationNumber}`,
+        priority: "high",
+      });
+
+      // Confirmation notification for vendor
+      addVendorNotification({
+        type: "correction-submitted",
+        title: "Application Resubmitted for Review",
+        message: "Your application corrections have been submitted for review.",
+        fullMessage: `Your application corrections for ${app.applicationNumber} have been received. Administrative review has resumed.`,
+        applicationNumber: app.applicationNumber,
+        vendorName: "Juan's Food Stall",
+        status: "Under Review",
+        actionLabel: "View Application",
+        actionUrl: "/dashboard/my-application",
+        href: "/dashboard/my-application",
+        priority: "normal",
+      });
+
       showToast(
         "Your corrections have been submitted successfully. Your application is now under review.",
         "success"

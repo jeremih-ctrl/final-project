@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -29,13 +29,18 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetTrigger, SheetContent } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
+import { useVendorAuth } from "@/lib/demo-auth";
+import { useVendorNotifications } from "@/lib/notifications-data";
 
 interface SidebarNavProps {
   pathname: string;
   onNavigate?: () => void;
+  onLogout?: () => void;
 }
 
-function SidebarNav({ pathname, onNavigate }: SidebarNavProps) {
+function SidebarNav({ pathname, onNavigate, onLogout }: SidebarNavProps) {
+  const { unreadCount } = useVendorNotifications("BVR-2026-001248");
+
   const navItems = [
     {
       label: "Dashboard",
@@ -68,8 +73,8 @@ function SidebarNav({ pathname, onNavigate }: SidebarNavProps) {
       href: "/dashboard/notifications",
       icon: Bell,
       active: pathname === "/dashboard/notifications",
-      badge: "2",
-      hasDot: true,
+      badge: unreadCount > 0 ? String(unreadCount) : undefined,
+      hasDot: unreadCount > 0,
     },
     {
       label: "Settings",
@@ -147,14 +152,17 @@ function SidebarNav({ pathname, onNavigate }: SidebarNavProps) {
           <span>Help / Support</span>
         </Link>
 
-        <Link
-          href="/"
-          onClick={onNavigate}
-          className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium text-rose-400 hover:bg-rose-950/40 hover:text-rose-300 transition-colors"
+        <button
+          type="button"
+          onClick={() => {
+            if (onNavigate) onNavigate();
+            if (onLogout) onLogout();
+          }}
+          className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium text-rose-400 hover:bg-rose-950/40 hover:text-rose-300 transition-colors cursor-pointer text-left"
         >
           <LogOut className="w-4 h-4 shrink-0" />
           <span>Logout</span>
-        </Link>
+        </button>
       </div>
     </div>
   );
@@ -168,6 +176,14 @@ export default function DashboardLayout({
   const pathname = usePathname();
   const router = useRouter();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const { session, isLoading, logout } = useVendorAuth();
+
+  // Redirect to vendor login if unauthenticated
+  useEffect(() => {
+    if (!isLoading && !session) {
+      router.replace("/login");
+    }
+  }, [isLoading, session, router]);
 
   // Dynamic header page title based on current route
   const getHeaderTitle = (path: string) => {
@@ -180,11 +196,25 @@ export default function DashboardLayout({
 
   const headerTitle = getHeaderTitle(pathname);
 
+  // Protected route guard: Do not display dashboard or user information until authenticated
+  if (isLoading || !session) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-3 border-blue-600 border-t-transparent rounded-full animate-spin" />
+          <p className="text-xs font-medium text-slate-500">
+            Checking authentication...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50/70 text-slate-900 flex">
       {/* Desktop Sidebar (visible on lg screens) */}
       <aside className="hidden lg:flex w-64 flex-col fixed inset-y-0 z-30 shadow-xs border-r border-slate-800">
-        <SidebarNav pathname={pathname} />
+        <SidebarNav pathname={pathname} onLogout={logout} />
       </aside>
 
       {/* Main Content Area (offset by sidebar width on desktop) */}
@@ -209,6 +239,7 @@ export default function DashboardLayout({
                 <SidebarNav
                   pathname={pathname}
                   onNavigate={() => setMobileMenuOpen(false)}
+                  onLogout={logout}
                 />
               </SheetContent>
             </Sheet>
@@ -249,14 +280,23 @@ export default function DashboardLayout({
                       size="sm"
                       className="bg-blue-100 text-blue-700 font-bold border border-blue-200"
                     >
-                      <AvatarFallback>JD</AvatarFallback>
+                      <AvatarFallback>
+                        {session.name
+                          ? session.name
+                              .split(" ")
+                              .map((n) => n[0])
+                              .join("")
+                              .slice(0, 2)
+                              .toUpperCase()
+                          : "JD"}
+                      </AvatarFallback>
                     </Avatar>
                     <div className="text-left hidden md:block">
                       <span className="text-xs font-bold text-slate-900 block leading-tight">
-                        Juan Dela Cruz
+                        {session.name}
                       </span>
                       <span className="text-[11px] text-slate-500 font-medium block leading-tight">
-                        Local Vendor
+                        {session.role}
                       </span>
                     </div>
                   </button>
@@ -269,10 +309,10 @@ export default function DashboardLayout({
                 <DropdownMenuGroup>
                   <DropdownMenuLabel className="font-semibold text-xs px-2 py-1.5 text-slate-700">
                     <div className="font-bold text-sm text-slate-900">
-                      Juan Dela Cruz
+                      {session.name}
                     </div>
                     <div className="text-xs font-normal text-slate-500">
-                      juan@email.com
+                      {session.email}
                     </div>
                   </DropdownMenuLabel>
                 </DropdownMenuGroup>
@@ -294,7 +334,7 @@ export default function DashboardLayout({
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   variant="destructive"
-                  onClick={() => router.push("/")}
+                  onClick={logout}
                   className="text-xs py-2 text-rose-600 font-medium cursor-pointer"
                 >
                   <LogOut className="w-4 h-4 mr-2 text-rose-500" />

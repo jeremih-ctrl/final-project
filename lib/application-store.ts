@@ -23,15 +23,16 @@ function isBrowser(): boolean {
 
 // ─── Reactive Cache & Subscription ───────────────────────────────────────────
 
-let cachedSnapshot: VendorApplication[] = [];
-let lastRaw: string | null = null;
+const EMPTY_STORE_APPLICATIONS: VendorApplication[] = [];
+let cachedSnapshot: VendorApplication[] = EMPTY_STORE_APPLICATIONS;
+let lastRaw: string | null = "__UNSET__";
 
 function subscribeToStore(callback: () => void): () => void {
   if (typeof window === "undefined") {
     return () => {};
   }
   const handleEvent = () => {
-    lastRaw = null;
+    lastRaw = "__UNSET__";
     callback();
   };
   window.addEventListener(APPLICATIONS_STORE_UPDATED_EVENT, handleEvent);
@@ -44,23 +45,28 @@ function subscribeToStore(callback: () => void): () => void {
 
 function getStoreSnapshot(): VendorApplication[] {
   if (!isBrowser()) {
-    return [];
+    return EMPTY_STORE_APPLICATIONS;
   }
   try {
     const raw = localStorage.getItem(APPLICATIONS_STORAGE_KEY);
-    if (lastRaw !== null && raw === lastRaw && cachedSnapshot !== null) {
+    if (raw === lastRaw) {
       return cachedSnapshot;
     }
     lastRaw = raw;
-    cachedSnapshot = getApplications();
+    if (!raw) {
+      cachedSnapshot = EMPTY_STORE_APPLICATIONS;
+    } else {
+      const parsed = JSON.parse(raw);
+      cachedSnapshot = Array.isArray(parsed) ? (parsed as VendorApplication[]) : EMPTY_STORE_APPLICATIONS;
+    }
     return cachedSnapshot;
   } catch {
-    return [];
+    return cachedSnapshot;
   }
 }
 
 function getStoreServerSnapshot(): VendorApplication[] {
-  return [];
+  return EMPTY_STORE_APPLICATIONS;
 }
 
 /**
@@ -307,8 +313,8 @@ export function clearApplications(): void {
   if (!isBrowser()) return;
   try {
     localStorage.removeItem(APPLICATIONS_STORAGE_KEY);
-    lastRaw = null;
-    cachedSnapshot = [];
+    lastRaw = "__UNSET__";
+    cachedSnapshot = EMPTY_STORE_APPLICATIONS;
     if (typeof window.dispatchEvent === "function") {
       window.dispatchEvent(
         new CustomEvent(APPLICATIONS_STORE_UPDATED_EVENT, { detail: [] })
@@ -342,3 +348,143 @@ export function generateNextApplicationNumber(): string {
   const nextSeq = String(maxSeq + 1).padStart(6, "0");
   return `BVR-${year}-${nextSeq}`;
 }
+
+// ─── Deleted Admin Applications Store ─────────────────────────────────────────
+
+export const DELETED_APPLICATIONS_STORAGE_KEY = "bvr_deleted_applications";
+export const DELETED_APPLICATIONS_UPDATED_EVENT = "bvr_deleted_applications_updated";
+
+const EMPTY_DELETED_APPLICATIONS: string[] = [];
+let cachedDeletedSnapshot: string[] = EMPTY_DELETED_APPLICATIONS;
+let lastDeletedRaw: string | null = "__UNSET__";
+
+export function subscribeToDeletedStore(callback: () => void): () => void {
+  if (!isBrowser()) {
+    return () => {};
+  }
+  const handleEvent = () => {
+    lastDeletedRaw = "__UNSET__";
+    callback();
+  };
+  window.addEventListener(DELETED_APPLICATIONS_UPDATED_EVENT, handleEvent);
+  window.addEventListener("storage", handleEvent);
+  return () => {
+    window.removeEventListener(DELETED_APPLICATIONS_UPDATED_EVENT, handleEvent);
+    window.removeEventListener("storage", handleEvent);
+  };
+}
+
+/**
+ * Returns a stable snapshot of deleted application IDs.
+ * The exact same array reference is returned unless the underlying stored data has changed.
+ */
+export function getDeletedStoreSnapshot(): string[] {
+  if (!isBrowser()) {
+    return EMPTY_DELETED_APPLICATIONS;
+  }
+  try {
+    const raw = localStorage.getItem(DELETED_APPLICATIONS_STORAGE_KEY);
+    if (raw === lastDeletedRaw) {
+      return cachedDeletedSnapshot;
+    }
+    lastDeletedRaw = raw;
+    if (!raw) {
+      cachedDeletedSnapshot = EMPTY_DELETED_APPLICATIONS;
+    } else {
+      const parsed = JSON.parse(raw);
+      cachedDeletedSnapshot = Array.isArray(parsed)
+        ? (parsed as string[])
+        : EMPTY_DELETED_APPLICATIONS;
+    }
+    return cachedDeletedSnapshot;
+  } catch {
+    return cachedDeletedSnapshot;
+  }
+}
+
+/**
+ * Stable server snapshot for SSR compatibility.
+ */
+export function getDeletedStoreServerSnapshot(): string[] {
+  return EMPTY_DELETED_APPLICATIONS;
+}
+
+/**
+ * React hook to reactively subscribe to deleted application IDs.
+ * Strictly adheres to useSyncExternalStore contract with stable snapshot references.
+ */
+export function useDeletedApplicationIds(): string[] {
+  return useSyncExternalStore(
+    subscribeToDeletedStore,
+    getDeletedStoreSnapshot,
+    getDeletedStoreServerSnapshot
+  );
+}
+
+/**
+ * Retrieve all deleted application IDs from the store.
+ * Returns the stable cached snapshot reference.
+ */
+export function getDeletedApplicationIds(): string[] {
+  return getDeletedStoreSnapshot();
+}
+
+/**
+ * Check if a specific application ID is marked as deleted.
+ */
+export function isApplicationDeleted(id: string): boolean {
+  if (!id || !isBrowser()) return false;
+  const deleted = getDeletedStoreSnapshot();
+  return deleted.includes(id.trim().toLowerCase());
+}
+
+/**
+ * Mark an application as deleted in the store.
+ * Updates snapshot once and notifies subscribers.
+ */
+export function deleteAdminApplicationRecord(id: string): boolean {
+  if (!id || !isBrowser()) return false;
+  const normalized = id.trim().toLowerCase();
+  const current = getDeletedStoreSnapshot();
+  if (!current.includes(normalized)) {
+    const updated = [...current, normalized];
+    const serialized = JSON.stringify(updated);
+    localStorage.setItem(DELETED_APPLICATIONS_STORAGE_KEY, serialized);
+    lastDeletedRaw = serialized;
+    cachedDeletedSnapshot = updated;
+
+    // Also remove from stored applications if it exists there
+    deleteApplication(id);
+
+    if (typeof window.dispatchEvent === "function") {
+      window.dispatchEvent(
+        new CustomEvent(DELETED_APPLICATIONS_UPDATED_EVENT, { detail: updated })
+      );
+    }
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Reset all deleted applications (restores deleted seed/mock applications).
+ * Updates snapshot once and notifies subscribers.
+ */
+export function resetDeletedAdminApplications(): void {
+  if (!isBrowser()) return;
+  try {
+    localStorage.removeItem(DELETED_APPLICATIONS_STORAGE_KEY);
+    lastDeletedRaw = null;
+    cachedDeletedSnapshot = EMPTY_DELETED_APPLICATIONS;
+    if (typeof window.dispatchEvent === "function") {
+      window.dispatchEvent(
+        new CustomEvent(DELETED_APPLICATIONS_UPDATED_EVENT, {
+          detail: EMPTY_DELETED_APPLICATIONS,
+        })
+      );
+    }
+  } catch (error) {
+    console.error("Failed to reset deleted applications:", error);
+  }
+}
+
