@@ -22,21 +22,25 @@ import {
   Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useSharedApplication } from "@/lib/vendor-application-state";
 
 type StatusState =
-  | "under-review"
+  | "draft"
   | "submitted"
+  | "under-review"
   | "needs-correction"
+  | "correction-submitted"
   | "approved"
   | "rejected";
 
 export default function ApplicationStatusPage() {
-  const [currentStatus, setCurrentStatus] = useState<StatusState>("under-review");
+  const { application, status, updateStatus } = useSharedApplication();
+  const currentStatus = status as StatusState;
   const [copied, setCopied] = useState(false);
   const [hasGovId, setHasGovId] = useState(true);
 
-  const applicationNumber = "BVR-2026-001248";
-  const vendorId = "BUT-V-001248";
+  const applicationNumber = application.id || application.applicationNumber || "BVR-2026-001248";
+  const vendorId = application.vendorId || "BUT-V-001248";
 
   const handleCopy = () => {
     if (navigator?.clipboard) {
@@ -48,6 +52,16 @@ export default function ApplicationStatusPage() {
 
   // Status configuration mappings
   const statusConfig = {
+    draft: {
+      badgeText: "Draft",
+      badgeColor: "bg-slate-100 text-slate-700 border-slate-300",
+      dotColor: "bg-slate-400",
+      title: "Draft Application",
+      description: "Your vendor registration draft is saved. Review details and submit when ready.",
+      bannerStyle: "bg-slate-50 border-slate-300 text-slate-800",
+      icon: FileText,
+      timelineIndex: 0,
+    },
     submitted: {
       badgeText: "Registration Submitted",
       badgeColor: "bg-blue-100 text-blue-800 border-blue-300",
@@ -73,18 +87,31 @@ export default function ApplicationStatusPage() {
       badgeColor: "bg-orange-100 text-orange-900 border-orange-300",
       dotColor: "bg-orange-500",
       title: "Action Required",
-      description:
-        "Some information needs to be corrected before your application can be approved.",
-      remarks: "Please provide a clearer copy of your business information.",
+      description: "An administrator has requested corrections to your application.",
+      remarks:
+        application.adminRemarks ||
+        "Please provide a clearer business address and replace the submitted government ID image with a readable copy.",
+      correctionDate: application.lastUpdatedText || "October 6, 2026 • 2:45 PM",
       bannerStyle: "bg-orange-50/80 border-orange-300 text-orange-950",
       icon: AlertTriangle,
-      timelineIndex: 2, // In review/correction
+      timelineIndex: 2,
+    },
+    "correction-submitted": {
+      badgeText: "Correction Submitted",
+      badgeColor: "bg-blue-100 text-blue-800 border-blue-300",
+      dotColor: "bg-blue-500 animate-pulse",
+      title: "Correction Submitted — Under Review",
+      description:
+        "Your corrections have been submitted successfully. Your application is now under review by the administrator.",
+      bannerStyle: "bg-blue-50/80 border-blue-300 text-blue-950",
+      icon: Clock,
+      timelineIndex: 2,
     },
     approved: {
       badgeText: "Approved",
       badgeColor: "bg-emerald-100 text-emerald-900 border-emerald-300",
       dotColor: "bg-emerald-500",
-      title: "Vendor Registration Approved",
+      title: "Registration Approved",
       description: "Your vendor registration has been approved.",
       vendorId: vendorId,
       bannerStyle: "bg-emerald-50/80 border-emerald-200/90 text-emerald-950",
@@ -95,9 +122,10 @@ export default function ApplicationStatusPage() {
       badgeText: "Not Approved",
       badgeColor: "bg-slate-100 text-slate-800 border-slate-300",
       dotColor: "bg-rose-500",
-      title: "Application Not Approved",
+      title: "Application Rejected",
       description: "Your application was not approved.",
       remarks:
+        application.adminRemarks ||
         "The business location indicated is outside the territorial jurisdiction of Butuan City or failed initial compliance verification.",
       bannerStyle: "bg-slate-50 border-slate-300 text-slate-900",
       icon: XCircle,
@@ -172,70 +200,29 @@ export default function ApplicationStatusPage() {
             </div>
 
             <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-              <button
-                type="button"
-                onClick={() => setCurrentStatus("under-review")}
-                className={cn(
-                  "px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer",
-                  currentStatus === "under-review"
-                    ? "bg-amber-600 text-white shadow-xs"
-                    : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                )}
-              >
-                ● Under Review (Default)
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setCurrentStatus("submitted")}
-                className={cn(
-                  "px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer",
-                  currentStatus === "submitted"
-                    ? "bg-blue-600 text-white shadow-xs"
-                    : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                )}
-              >
-                Submitted
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setCurrentStatus("needs-correction")}
-                className={cn(
-                  "px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer",
-                  currentStatus === "needs-correction"
-                    ? "bg-orange-600 text-white shadow-xs"
-                    : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                )}
-              >
-                Action Required
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setCurrentStatus("approved")}
-                className={cn(
-                  "px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer",
-                  currentStatus === "approved"
-                    ? "bg-emerald-600 text-white shadow-xs"
-                    : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                )}
-              >
-                Approved
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setCurrentStatus("rejected")}
-                className={cn(
-                  "px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer",
-                  currentStatus === "rejected"
-                    ? "bg-slate-800 text-white shadow-xs"
-                    : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                )}
-              >
-                Not Approved
-              </button>
+              {([
+                { status: "draft" as StatusState, label: "Draft", active: "bg-slate-600 text-white" },
+                { status: "submitted" as StatusState, label: "Submitted", active: "bg-blue-600 text-white" },
+                { status: "under-review" as StatusState, label: "Under Review", active: "bg-amber-600 text-white" },
+                { status: "needs-correction" as StatusState, label: "● Needs Correction", active: "bg-orange-600 text-white" },
+                { status: "correction-submitted" as StatusState, label: "Correction Submitted", active: "bg-blue-700 text-white" },
+                { status: "approved" as StatusState, label: "Approved", active: "bg-emerald-600 text-white" },
+                { status: "rejected" as StatusState, label: "Not Approved", active: "bg-slate-800 text-white" },
+              ] as const).map(({ status, label, active }) => (
+                <button
+                  key={status}
+                  type="button"
+                  onClick={() => updateStatus(status)}
+                  className={cn(
+                    "px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer",
+                    currentStatus === status
+                      ? cn(active, "shadow-xs")
+                      : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
           </div>
 
@@ -351,19 +338,55 @@ export default function ApplicationStatusPage() {
               </div>
             )}
 
-            {/* Action button for Needs Correction */}
+            {/* Correction Notice Card for Needs Correction */}
             {currentStatus === "needs-correction" && (
-              <div className="pt-1">
+              <div className="space-y-3 pt-1">
+                {/* Correction fields list */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {[
+                    { label: "Street / Business Address", reason: "Provide the complete street address." },
+                    { label: "Government ID", reason: "Upload a clearer, readable copy." },
+                  ].map((cf) => (
+                    <div
+                      key={cf.label}
+                      className="flex items-start gap-2.5 p-3 rounded-lg bg-white/70 border border-orange-200"
+                    >
+                      <AlertTriangle className="w-3.5 h-3.5 text-orange-600 mt-0.5 shrink-0" />
+                      <div>
+                        <p className="text-xs font-bold text-orange-900">{cf.label}</p>
+                        <p className="text-[11px] text-orange-800 font-medium mt-0.5">{cf.reason}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {"correctionDate" in current && (
+                  <p className="text-[11px] text-orange-700 font-medium">
+                    Correction requested on:{" "}
+                    <strong>
+                      {(current as { correctionDate?: string }).correctionDate}
+                    </strong>
+                  </p>
+                )}
+
                 <Link
-                  href="/register"
+                  href="/dashboard/my-application/correction"
                   className={cn(
                     buttonVariants({ variant: "default", size: "sm" }),
-                    "bg-orange-600 hover:bg-orange-700 text-white font-semibold shadow-xs cursor-pointer gap-2"
+                    "bg-orange-600 hover:bg-orange-700 text-white font-bold shadow-xs cursor-pointer gap-2"
                   )}
                 >
                   <FileText className="w-4 h-4" />
-                  Review Application
+                  Review &amp; Correct Application
                 </Link>
+              </div>
+            )}
+
+            {/* Correction Submitted message */}
+            {currentStatus === "correction-submitted" && (
+              <div className="pt-1 flex items-center gap-2 text-sm font-semibold text-blue-900">
+                <Sparkles className="w-4 h-4 text-blue-600" />
+                Your corrections are under review. No further action is required.
               </div>
             )}
           </div>
@@ -547,6 +570,290 @@ export default function ApplicationStatusPage() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Dynamic Activity Timeline (Task 9 Requirement 9) */}
+          <Card className="bg-white border border-slate-200/90 rounded-2xl shadow-xs overflow-hidden">
+            <CardHeader className="p-5 pb-3 border-b border-slate-100 flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="text-base sm:text-lg font-bold text-slate-900">
+                  Activity Timeline
+                </CardTitle>
+                <p className="text-xs text-slate-500">
+                  Activity log for application #{applicationNumber} — newest activity first
+                </p>
+              </div>
+              <Badge variant="outline" className="text-xs text-slate-600">
+                {currentStatus === "needs-correction"
+                  ? "Correction Requested"
+                  : currentStatus === "correction-submitted"
+                  ? "Correction Submitted"
+                  : "Activity Log"}
+              </Badge>
+            </CardHeader>
+            <CardContent className="p-5 sm:p-6 space-y-4">
+              {currentStatus === "needs-correction" && (
+                <>
+                  <div className="flex items-start gap-3">
+                    <div className="w-2.5 h-2.5 rounded-full bg-orange-500 mt-1.5 shrink-0 ring-4 ring-orange-100" />
+                    <div className="space-y-0.5 min-w-0 flex-1">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-0.5">
+                        <p className="text-xs font-bold text-orange-950">1. Correction Requested</p>
+                        <span className="text-[11px] text-slate-400">Oct 6, 2026 • 2:45 PM</span>
+                      </div>
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        Administrator requested corrections to business address and government ID.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 mt-1.5 shrink-0" />
+                    <div className="space-y-0.5 min-w-0 flex-1">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-0.5">
+                        <p className="text-xs font-bold text-slate-900">2. Application Submitted</p>
+                        <span className="text-[11px] text-slate-400">Oct 6, 2026 • 9:30 AM</span>
+                      </div>
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        Vendor registration application was successfully submitted.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <div className="w-2.5 h-2.5 rounded-full bg-slate-400 mt-1.5 shrink-0" />
+                    <div className="space-y-0.5 min-w-0 flex-1">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-0.5">
+                        <p className="text-xs font-bold text-slate-900">3. Application Created</p>
+                        <span className="text-[11px] text-slate-400">Oct 6, 2026 • 9:15 AM</span>
+                      </div>
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        Initial application registration draft created.
+                      </p>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {currentStatus === "correction-submitted" && (
+                <>
+                  <div className="flex items-start gap-3">
+                    <div className="w-2.5 h-2.5 rounded-full bg-blue-600 mt-1.5 shrink-0 ring-4 ring-blue-100" />
+                    <div className="space-y-0.5 min-w-0 flex-1">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-0.5">
+                        <p className="text-xs font-bold text-blue-950">1. Correction Submitted</p>
+                        <span className="text-[11px] text-blue-700 font-semibold">Today • Just now</span>
+                      </div>
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        Vendor submitted application corrections. Status changed back to Under Review.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <div className="w-2.5 h-2.5 rounded-full bg-orange-500 mt-1.5 shrink-0" />
+                    <div className="space-y-0.5 min-w-0 flex-1">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-0.5">
+                        <p className="text-xs font-bold text-slate-900">2. Correction Requested</p>
+                        <span className="text-[11px] text-slate-400">Oct 6, 2026 • 2:45 PM</span>
+                      </div>
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        Administrator requested corrections to business address and government ID.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 mt-1.5 shrink-0" />
+                    <div className="space-y-0.5 min-w-0 flex-1">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-0.5">
+                        <p className="text-xs font-bold text-slate-900">3. Application Submitted</p>
+                        <span className="text-[11px] text-slate-400">Oct 6, 2026 • 9:30 AM</span>
+                      </div>
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        Vendor registration application was successfully submitted.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <div className="w-2.5 h-2.5 rounded-full bg-slate-400 mt-1.5 shrink-0" />
+                    <div className="space-y-0.5 min-w-0 flex-1">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-0.5">
+                        <p className="text-xs font-bold text-slate-900">4. Application Created</p>
+                        <span className="text-[11px] text-slate-400">Oct 6, 2026 • 9:15 AM</span>
+                      </div>
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        Initial application registration draft created.
+                      </p>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {currentStatus === "under-review" && (
+                <>
+                  <div className="flex items-start gap-3">
+                    <div className="w-2.5 h-2.5 rounded-full bg-amber-500 mt-1.5 shrink-0 ring-4 ring-amber-100" />
+                    <div className="space-y-0.5 min-w-0 flex-1">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-0.5">
+                        <p className="text-xs font-bold text-amber-950">Application Under Review</p>
+                        <span className="text-[11px] text-slate-400">Oct 6, 2026 • 11:00 AM</span>
+                      </div>
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        Application is actively being reviewed by the LGU licensing administrator.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 mt-1.5 shrink-0" />
+                    <div className="space-y-0.5 min-w-0 flex-1">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-0.5">
+                        <p className="text-xs font-bold text-slate-900">Application Submitted</p>
+                        <span className="text-[11px] text-slate-400">Oct 6, 2026 • 9:30 AM</span>
+                      </div>
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        Vendor registration application was successfully submitted.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <div className="w-2.5 h-2.5 rounded-full bg-slate-400 mt-1.5 shrink-0" />
+                    <div className="space-y-0.5 min-w-0 flex-1">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-0.5">
+                        <p className="text-xs font-bold text-slate-900">Application Created</p>
+                        <span className="text-[11px] text-slate-400">Oct 6, 2026 • 9:15 AM</span>
+                      </div>
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        Initial application registration draft created.
+                      </p>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {currentStatus === "submitted" && (
+                <>
+                  <div className="flex items-start gap-3">
+                    <div className="w-2.5 h-2.5 rounded-full bg-blue-500 mt-1.5 shrink-0 ring-4 ring-blue-100" />
+                    <div className="space-y-0.5 min-w-0 flex-1">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-0.5">
+                        <p className="text-xs font-bold text-blue-950">Application Submitted</p>
+                        <span className="text-[11px] text-slate-400">Oct 6, 2026 • 9:30 AM</span>
+                      </div>
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        Vendor registration application was successfully submitted.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <div className="w-2.5 h-2.5 rounded-full bg-slate-400 mt-1.5 shrink-0" />
+                    <div className="space-y-0.5 min-w-0 flex-1">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-0.5">
+                        <p className="text-xs font-bold text-slate-900">Application Created</p>
+                        <span className="text-[11px] text-slate-400">Oct 6, 2026 • 9:15 AM</span>
+                      </div>
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        Initial application registration draft created.
+                      </p>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {currentStatus === "draft" && (
+                <div className="flex items-start gap-3">
+                  <div className="w-2.5 h-2.5 rounded-full bg-slate-400 mt-1.5 shrink-0 ring-4 ring-slate-100" />
+                  <div className="space-y-0.5 min-w-0 flex-1">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-0.5">
+                      <p className="text-xs font-bold text-slate-900">Application Draft Created</p>
+                      <span className="text-[11px] text-slate-400">Oct 6, 2026 • 9:15 AM</span>
+                    </div>
+                    <p className="text-xs text-slate-600 leading-relaxed">
+                      Application draft saved. Ready to be submitted.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {currentStatus === "approved" && (
+                <>
+                  <div className="flex items-start gap-3">
+                    <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 mt-1.5 shrink-0 ring-4 ring-emerald-100" />
+                    <div className="space-y-0.5 min-w-0 flex-1">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-0.5">
+                        <p className="text-xs font-bold text-emerald-950">Registration Approved</p>
+                        <span className="text-[11px] text-slate-400">Oct 6, 2026 • 4:00 PM</span>
+                      </div>
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        Vendor registration approved. Official vendor ID issued.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <div className="w-2.5 h-2.5 rounded-full bg-amber-500 mt-1.5 shrink-0" />
+                    <div className="space-y-0.5 min-w-0 flex-1">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-0.5">
+                        <p className="text-xs font-bold text-slate-900">Application Under Review</p>
+                        <span className="text-[11px] text-slate-400">Oct 6, 2026 • 11:00 AM</span>
+                      </div>
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        Application was reviewed and approved.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <div className="w-2.5 h-2.5 rounded-full bg-blue-500 mt-1.5 shrink-0" />
+                    <div className="space-y-0.5 min-w-0 flex-1">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-0.5">
+                        <p className="text-xs font-bold text-slate-900">Application Submitted</p>
+                        <span className="text-[11px] text-slate-400">Oct 6, 2026 • 9:30 AM</span>
+                      </div>
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        Vendor registration application was successfully submitted.
+                      </p>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {currentStatus === "rejected" && (
+                <>
+                  <div className="flex items-start gap-3">
+                    <div className="w-2.5 h-2.5 rounded-full bg-rose-500 mt-1.5 shrink-0 ring-4 ring-rose-100" />
+                    <div className="space-y-0.5 min-w-0 flex-1">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-0.5">
+                        <p className="text-xs font-bold text-rose-950">Application Not Approved</p>
+                        <span className="text-[11px] text-slate-400">Oct 6, 2026 • 3:30 PM</span>
+                      </div>
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        Application could not be approved due to compliance criteria.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <div className="w-2.5 h-2.5 rounded-full bg-amber-500 mt-1.5 shrink-0" />
+                    <div className="space-y-0.5 min-w-0 flex-1">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-0.5">
+                        <p className="text-xs font-bold text-slate-900">Application Under Review</p>
+                        <span className="text-[11px] text-slate-400">Oct 6, 2026 • 11:00 AM</span>
+                      </div>
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        Application review completed.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <div className="w-2.5 h-2.5 rounded-full bg-blue-500 mt-1.5 shrink-0" />
+                    <div className="space-y-0.5 min-w-0 flex-1">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-0.5">
+                        <p className="text-xs font-bold text-slate-900">Application Submitted</p>
+                        <span className="text-[11px] text-slate-400">Oct 6, 2026 • 9:30 AM</span>
+                      </div>
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        Vendor registration application was successfully submitted.
+                      </p>
+                    </div>
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+
 
           {/* 6. Application Information Cards */}
           <div className="space-y-4">

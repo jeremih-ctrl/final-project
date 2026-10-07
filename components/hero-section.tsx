@@ -203,7 +203,13 @@ export function HeroSection() {
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                     Real-time status tracking enabled
                   </span>
-                  <span className="font-medium text-blue-700">LGU Butuan</span>
+                  <Link
+                    href="/application-status"
+                    className="font-semibold text-blue-700 hover:text-blue-800 hover:underline flex items-center gap-1"
+                  >
+                    <span>Track Status</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </Link>
                 </CardFooter>
               </Card>
             </div>

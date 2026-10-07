@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -16,10 +16,27 @@ import {
   FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getApplications } from "@/lib/application-store";
+
+function getClientAppNumber(): string {
+  if (typeof window === "undefined") return "BVR-2026-001248";
+  const params = new URLSearchParams(window.location.search);
+  const queryAppNum = params.get("appNumber");
+  if (queryAppNum) return queryAppNum;
+  const stored = getApplications();
+  if (stored.length > 0) {
+    return stored[stored.length - 1].applicationNumber;
+  }
+  return "BVR-2026-001248";
+}
 
 export default function RegisterSuccessPage() {
   const [copied, setCopied] = useState(false);
-  const applicationNumber = "BVR-2026-001248";
+  const applicationNumber = useSyncExternalStore(
+    () => () => {},
+    getClientAppNumber,
+    () => "BVR-2026-001248"
+  );
 
   const handleCopy = () => {
     if (navigator?.clipboard) {
@@ -104,7 +121,7 @@ export default function RegisterSuccessPage() {
                     Application Number
                   </span>
                   <span className="text-[11px] font-medium text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200">
-                    Under Review
+                    Submitted
                   </span>
                 </div>
 

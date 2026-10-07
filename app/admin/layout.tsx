@@ -24,6 +24,7 @@ import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -74,7 +75,7 @@ function AdminSidebar({ pathname, onNavigate }: AdminSidebarProps) {
       href: "/admin/notifications",
       icon: Bell,
       active: pathname.startsWith("/admin/notifications"),
-      badge: "5",
+      badge: "2",
     },
     {
       label: "Settings",
@@ -193,6 +194,11 @@ export default function AdminLayout({
 
   const headerTitle = getHeaderTitle(pathname);
 
+  // Standalone login page without sidebar layout
+  if (pathname === "/admin/login") {
+    return <>{children}</>;
+  }
+
   return (
     <div className="min-h-screen bg-slate-50/80 text-slate-900 flex">
       {/* Desktop Sidebar (visible on lg screens) */}
@@ -287,14 +293,16 @@ export default function AdminLayout({
                 align="end"
                 className="w-56 p-1.5 shadow-lg border-slate-200"
               >
-                <DropdownMenuLabel className="font-semibold text-xs px-2 py-1.5 text-slate-700">
-                  <div className="font-bold text-sm text-slate-900">
-                    Administrator
-                  </div>
-                  <div className="text-xs font-normal text-slate-500">
-                    admin@butuan.gov.ph
-                  </div>
-                </DropdownMenuLabel>
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel className="font-semibold text-xs px-2 py-1.5 text-slate-700">
+                    <div className="font-bold text-sm text-slate-900">
+                      Administrator
+                    </div>
+                    <div className="text-xs font-normal text-slate-500">
+                      admin@butuan.gov.ph
+                    </div>
+                  </DropdownMenuLabel>
+                </DropdownMenuGroup>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   onClick={() => router.push("/admin/settings")}

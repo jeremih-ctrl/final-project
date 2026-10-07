@@ -22,6 +22,7 @@ import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -67,6 +68,7 @@ function SidebarNav({ pathname, onNavigate }: SidebarNavProps) {
       href: "/dashboard/notifications",
       icon: Bell,
       active: pathname === "/dashboard/notifications",
+      badge: "2",
       hasDot: true,
     },
     {
@@ -264,14 +266,16 @@ export default function DashboardLayout({
                 align="end"
                 className="w-56 p-1.5 shadow-lg border-slate-200"
               >
-                <DropdownMenuLabel className="font-semibold text-xs px-2 py-1.5 text-slate-700">
-                  <div className="font-bold text-sm text-slate-900">
-                    Juan Dela Cruz
-                  </div>
-                  <div className="text-xs font-normal text-slate-500">
-                    juan@email.com
-                  </div>
-                </DropdownMenuLabel>
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel className="font-semibold text-xs px-2 py-1.5 text-slate-700">
+                    <div className="font-bold text-sm text-slate-900">
+                      Juan Dela Cruz
+                    </div>
+                    <div className="text-xs font-normal text-slate-500">
+                      juan@email.com
+                    </div>
+                  </DropdownMenuLabel>
+                </DropdownMenuGroup>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   onClick={() => router.push("/dashboard/business-profile")}

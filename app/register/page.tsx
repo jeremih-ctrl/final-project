@@ -48,6 +48,11 @@ import {
   Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  createApplication,
+  generateNextApplicationNumber,
+} from "@/lib/application-store";
+import { VendorApplication } from "@/lib/types/vendor-application";
 
 const STEPS = [
   { id: 1, name: "Business", title: "Business Information" },
@@ -65,6 +70,8 @@ const SAMPLE_BARANGAYS = [
   "Leon Kilat",
   "San Vicente",
   "Villa Kananga",
+  "Urduja",
+  "Doongan",
 ];
 
 const ID_TYPES = [
@@ -80,6 +87,7 @@ export default function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [successModalOpen, setSuccessModalOpen] = useState(false);
+  const [createdAppNumber, setCreatedAppNumber] = useState<string>("BVR-2026-001248");
 
   // Form State (Starts empty so validation on required fields can be tested)
   const [formData, setFormData] = useState({
@@ -344,7 +352,72 @@ export default function RegisterPage() {
       return;
     }
 
-    setSuccessModalOpen(true);
+    try {
+      const newAppNumber = generateNextApplicationNumber();
+      const now = new Date().toISOString();
+
+      const newApp: VendorApplication = {
+        id: newAppNumber,
+        applicationNumber: newAppNumber,
+        status: "submitted",
+        business: {
+          businessName: formData.businessName.trim(),
+          businessDescription: formData.businessDescription.trim() || undefined,
+        },
+        owner: {
+          ownerName: formData.ownerName.trim(),
+        },
+        contact: {
+          contactNumber: formData.contactNumber.trim(),
+          emailAddress: formData.emailAddress.trim(),
+        },
+        address: {
+          houseNo: formData.houseNo.trim(),
+          street: formData.street.trim(),
+          barangay: formData.barangay,
+          city: "Butuan City",
+          province: "Agusan del Norte",
+          region: "Caraga",
+          country: "Philippines",
+        },
+        documents: formData.isSkippedId
+          ? []
+          : formData.idType || formData.idFileName
+          ? [
+              {
+                id: `doc-${Date.now()}`,
+                idType: formData.idType || "Government ID",
+                idNumber: formData.idNumber || undefined,
+                idFileName: formData.idFileName || undefined,
+                filename: formData.idFileName || "government-id.pdf",
+                uploadedAt: now,
+                status: "Submitted",
+                isSkippedId: false,
+              },
+            ]
+          : [],
+        statusHistory: [
+          {
+            id: `hist-${Date.now()}`,
+            previousStatus: null,
+            newStatus: "submitted",
+            timestamp: now,
+            action: "Application Submitted",
+            actionBy: "Vendor",
+          },
+        ],
+        submittedAt: now,
+        updatedAt: now,
+        createdAt: now,
+      };
+
+      createApplication(newApp);
+      setCreatedAppNumber(newAppNumber);
+      setSuccessModalOpen(true);
+    } catch (err) {
+      console.error("Failed to submit registration application:", err);
+      setSuccessModalOpen(true);
+    }
   };
 
   // Password rules checks for dynamic visual feedback
@@ -1642,7 +1715,7 @@ export default function RegisterPage() {
         </div>
       </main>
 
-      {/* 10. Temporary Success Modal State */}
+      {/* 10. Success Modal */}
       <Dialog open={successModalOpen} onOpenChange={setSuccessModalOpen}>
         <DialogContent className="sm:max-w-md p-6 bg-white border border-slate-200 rounded-2xl shadow-xl">
           <DialogHeader className="text-center space-y-3">
@@ -1650,27 +1723,33 @@ export default function RegisterPage() {
               <CheckCircle2 className="w-8 h-8" />
             </div>
             <DialogTitle className="text-xl font-extrabold text-slate-900 text-center">
-              Registration Ready
+              Registration Submitted!
             </DialogTitle>
             <DialogDescription className="text-sm text-slate-600 text-center leading-relaxed">
-              Your registration information has been successfully validated and is ready to be submitted.
+              Your vendor registration application has been submitted successfully to the City Government of Butuan.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="my-2 p-3.5 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-600 space-y-1.5">
+          <div className="my-2 p-3.5 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-600 space-y-2">
+            <div className="flex justify-between font-medium items-center">
+              <span>Application No:</span>
+              <span className="font-mono text-sm font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                {createdAppNumber}
+              </span>
+            </div>
             <div className="flex justify-between font-medium">
               <span>Jurisdiction:</span>
               <span className="text-slate-900 font-semibold">City of Butuan</span>
             </div>
             <div className="flex justify-between font-medium">
               <span>Status:</span>
-              <span className="text-emerald-700 font-semibold">Validation Passed (100%)</span>
+              <span className="text-blue-700 font-semibold">Submitted</span>
             </div>
           </div>
 
           <DialogFooter className="flex flex-col sm:flex-row gap-2 pt-2">
             <Link
-              href="/register/success"
+              href={`/register/success?appNumber=${createdAppNumber}`}
               className={cn(
                 buttonVariants({ variant: "default" }),
                 "w-full sm:flex-1 justify-center font-semibold cursor-pointer"
@@ -1684,7 +1763,7 @@ export default function RegisterPage() {
               onClick={() => setSuccessModalOpen(false)}
               className="w-full sm:w-auto justify-center font-medium cursor-pointer"
             >
-              Back to Registration
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>

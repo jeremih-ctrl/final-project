@@ -1,72 +1,538 @@
 "use client";
 
+import { useState, useMemo } from "react";
 import Link from "next/link";
+import {
+  FileCheck2,
+  Search,
+  Filter,
+  X,
+  Eye,
+  RotateCcw,
+  Building2,
+  CheckCircle2,
+  Clock,
+  AlertCircle,
+  FileText,
+  SlidersHorizontal,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { buttonVariants } from "@/components/ui/button";
-import { FileCheck2, ArrowLeft, Clock } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableHead,
+  TableRow,
+  TableCell,
+} from "@/components/ui/table";
+import {
+  MOCK_APPLICATIONS,
+  BARANGAY_OPTIONS,
+  STATUS_OPTIONS,
+  type ApplicationStatus,
+  type AdminApplication,
+} from "@/lib/admin-applications-data";
+import { useSharedApplication } from "@/lib/vendor-application-state";
+import { useStoredApplications } from "@/lib/application-store";
 import { cn } from "@/lib/utils";
 
+function formatSubmittedDate(dateStr: string | null | undefined): string {
+  if (!dateStr) return "Oct 7, 2026";
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    return d.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  } catch {
+    return dateStr;
+  }
+}
+
 export default function AdminApplicationsPage() {
+  const { application: sharedApp } = useSharedApplication();
+  const storedApplications = useStoredApplications();
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedStatus, setSelectedStatus] = useState<string>("All");
+  const [selectedBarangay, setSelectedBarangay] = useState<string>("All Barangays");
+
+  // Merge stored applications and mock seed applications
+  const allApplications = useMemo(() => {
+    const statusMap: Record<string, ApplicationStatus> = {
+      draft: "Submitted",
+      submitted: "Submitted",
+      under_review: "Under Review",
+      needs_correction: "Needs Correction",
+      correction_submitted: "Correction Submitted",
+      approved: "Approved",
+      rejected: "Rejected",
+    };
+
+    const storedMapped: (AdminApplication & { sortTime: number })[] =
+      storedApplications.map((app) => ({
+        id: app.applicationNumber || app.id,
+        businessName: app.business.businessName,
+        owner: app.owner.ownerName,
+        barangay: app.address.barangay,
+        submitted: formatSubmittedDate(app.submittedAt),
+        status: statusMap[app.status.toLowerCase()] || "Submitted",
+        businessDescription:
+          app.business.businessDescription ||
+          "Vendor registration application submitted online.",
+        contactNumber: app.contact.contactNumber,
+        email: app.contact.emailAddress,
+        address: {
+          houseNumber: app.address.houseNo,
+          street: app.address.street,
+          barangay: app.address.barangay,
+          city: app.address.city || "Butuan City",
+          province: app.address.province || "Agusan del Norte",
+          region: app.address.region || "Caraga",
+          country: app.address.country || "Philippines",
+        },
+        governmentId: app.documents?.[0]
+          ? {
+              submitted: true,
+              filename:
+                app.documents[0].filename ||
+                app.documents[0].idFileName ||
+                "government-id.pdf",
+              idType: app.documents[0].idType || "Philippine National ID",
+              uploadedAt: formatSubmittedDate(
+                app.documents[0].uploadedAt || app.submittedAt
+              ),
+              status: "Submitted",
+            }
+          : undefined,
+        remarks: app.adminRemarks,
+        vendorId: app.vendorId,
+        activityTimeline: [
+          {
+            id: `act-${app.id}-1`,
+            title: "Application Submitted",
+            date: formatSubmittedDate(app.submittedAt),
+            description: "Vendor submitted registration application.",
+            type: "submission",
+          },
+        ],
+        sortTime: app.submittedAt
+          ? new Date(app.submittedAt).getTime()
+          : 0,
+      }));
+
+    const storedIds = new Set(storedMapped.map((a) => a.id.toLowerCase()));
+
+    const mockMapped: (AdminApplication & { sortTime: number })[] =
+      MOCK_APPLICATIONS.filter((m) => !storedIds.has(m.id.toLowerCase())).map(
+        (app, idx) => {
+          let status = app.status;
+          if (app.id === sharedApp.id) {
+            status = sharedApp.adminStatus as ApplicationStatus;
+          }
+          return {
+            ...app,
+            status,
+            sortTime:
+              new Date("2026-10-06T10:00:00Z").getTime() - idx * 86400000,
+          };
+        }
+      );
+
+    return [...storedMapped, ...mockMapped].sort(
+      (a, b) => b.sortTime - a.sortTime
+    );
+  }, [storedApplications, sharedApp.id, sharedApp.adminStatus]);
+
+  // Client-side filtering
+  const filteredApplications = useMemo(() => {
+    return allApplications.filter((app) => {
+      // Search matching: business name, owner, or application number
+      const query = searchQuery.trim().toLowerCase();
+      const matchesSearch =
+        !query ||
+        app.id.toLowerCase().includes(query) ||
+        app.businessName.toLowerCase().includes(query) ||
+        app.owner.toLowerCase().includes(query);
+
+      // Status matching
+      const matchesStatus =
+        selectedStatus === "All" || app.status === selectedStatus;
+
+      // Barangay matching
+      const matchesBarangay =
+        selectedBarangay === "All Barangays" ||
+        app.barangay.toLowerCase() === selectedBarangay.toLowerCase();
+
+      return matchesSearch && matchesStatus && matchesBarangay;
+    });
+  }, [allApplications, searchQuery, selectedStatus, selectedBarangay]);
+
+  const hasActiveFilters =
+    searchQuery.trim() !== "" ||
+    selectedStatus !== "All" ||
+    selectedBarangay !== "All Barangays";
+
+  const clearFilters = () => {
+    setSearchQuery("");
+    setSelectedStatus("All");
+    setSelectedBarangay("All Barangays");
+  };
+
+  const getStatusBadge = (status: ApplicationStatus) => {
+    switch (status) {
+      case "Approved":
+        return (
+          <Badge className="bg-emerald-50 text-emerald-800 border-emerald-200 text-xs font-semibold">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 mr-1 inline-block" />
+            Approved
+          </Badge>
+        );
+      case "Under Review":
+        return (
+          <Badge className="bg-amber-50 text-amber-900 border-amber-300 text-xs font-semibold">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-600 mr-1 inline-block" />
+            Under Review
+          </Badge>
+        );
+      case "Needs Correction":
+        return (
+          <Badge className="bg-rose-50 text-rose-800 border-rose-200 text-xs font-semibold">
+            <span className="w-1.5 h-1.5 rounded-full bg-rose-600 mr-1 inline-block" />
+            Needs Correction
+          </Badge>
+        );
+      case "Correction Submitted":
+        return (
+          <Badge className="bg-purple-50 text-purple-800 border-purple-200 text-xs font-semibold">
+            <span className="w-1.5 h-1.5 rounded-full bg-purple-600 mr-1 inline-block" />
+            Correction Submitted
+          </Badge>
+        );
+      case "Submitted":
+        return (
+          <Badge className="bg-blue-50 text-blue-800 border-blue-200 text-xs font-semibold">
+            <span className="w-1.5 h-1.5 rounded-full bg-blue-600 mr-1 inline-block" />
+            Submitted
+          </Badge>
+        );
+      case "Rejected":
+        return (
+          <Badge className="bg-slate-100 text-slate-800 border-slate-300 text-xs font-semibold">
+            <span className="w-1.5 h-1.5 rounded-full bg-slate-500 mr-1 inline-block" />
+            Rejected
+          </Badge>
+        );
+    }
+  };
+
+  // Quick counts
+  const totalCount = allApplications.length;
+  const underReviewCount = allApplications.filter(
+    (a) => a.status === "Under Review"
+  ).length;
+  const needsCorrectionCount = allApplications.filter(
+    (a) => a.status === "Needs Correction"
+  ).length;
+  const approvedCount = allApplications.filter(
+    (a) => a.status === "Approved"
+  ).length;
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/90 shadow-2xs">
+      {/* 1. Header with Title & Description */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/90 shadow-2xs">
         <div>
-          <div className="flex items-center gap-2">
-            <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900">
-              Vendor Applications
-            </h2>
-            <Badge className="bg-amber-100 text-amber-900 border-amber-300 text-xs font-semibold">
-              84 Pending
-            </Badge>
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center shrink-0">
+              <FileCheck2 className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900">
+                  Vendor Applications
+                </h1>
+                <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-xs font-semibold">
+                  {totalCount} Total
+                </Badge>
+              </div>
+              <p className="text-xs sm:text-sm text-slate-600 mt-0.5">
+                Review and manage vendor registration applications.
+              </p>
+            </div>
           </div>
-          <p className="text-xs sm:text-sm text-slate-600 mt-1">
-            Review, evaluate, and certify pending local vendor registrations.
-          </p>
         </div>
 
-        <Link
-          href="/admin"
-          className={cn(
-            buttonVariants({ variant: "outline", size: "sm" }),
-            "text-xs font-medium text-slate-700 border-slate-300 hover:bg-slate-100 cursor-pointer gap-1.5"
-          )}
-        >
-          <ArrowLeft className="w-3.5 h-3.5" />
-          <span>Back to Dashboard</span>
-        </Link>
+        {/* Quick summary chips */}
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <div className="px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 font-medium flex items-center gap-1.5">
+            <Clock className="w-3.5 h-3.5 text-amber-600" />
+            <span>{underReviewCount} Under Review</span>
+          </div>
+          <div className="px-3 py-1.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 font-medium flex items-center gap-1.5">
+            <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
+            <span>{needsCorrectionCount} Needs Correction</span>
+          </div>
+          <div className="px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 font-medium flex items-center gap-1.5">
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+            <span>{approvedCount} Approved</span>
+          </div>
+        </div>
       </div>
 
+      {/* 2. Search & Filter UX Card */}
       <Card className="bg-white border border-slate-200/90 rounded-2xl shadow-xs overflow-hidden">
-        <CardHeader className="p-5 pb-3 border-b border-slate-100 flex flex-row items-center gap-2">
-          <FileCheck2 className="w-4 h-4 text-blue-700" />
-          <CardTitle className="text-base font-bold text-slate-900">
-            Application Queue
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-8 text-center space-y-3">
-          <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-700 flex items-center justify-center mx-auto">
-            <Clock className="w-6 h-6" />
-          </div>
-          <h3 className="text-base font-bold text-slate-900">
-            Full Application Processing Module
-          </h3>
-          <p className="text-xs sm:text-sm text-slate-600 max-w-md mx-auto">
-            This module will include detailed application filtering, document verification checklists, and administrative approval workflows.
-          </p>
-          <div className="pt-2">
-            <Link
-              href="/admin"
-              className={cn(
-                buttonVariants({ variant: "default", size: "sm" }),
-                "bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold"
+        <CardContent className="p-4 sm:p-5">
+          <div className="flex flex-col space-y-3">
+            {/* Responsive Row: Desktop one-row, Mobile stacked */}
+            <div className="flex flex-col lg:flex-row lg:items-center gap-3">
+              {/* Search Bar */}
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <Input
+                  id="search-applications"
+                  type="text"
+                  placeholder="Search by business name, owner, or application number"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9.5 pr-8 h-10 text-sm bg-slate-50/60 border-slate-300 focus:bg-white focus:border-blue-500 rounded-xl w-full"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery("")}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded cursor-pointer"
+                    aria-label="Clear search input"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {/* Filter Controls */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+                {/* Status Filter */}
+                <div className="w-full sm:w-44">
+                  <Select
+                    value={selectedStatus}
+                    onValueChange={(val) => val && setSelectedStatus(val)}
+                  >
+                    <SelectTrigger className="w-full h-10 px-3 bg-slate-50/60 border-slate-300 text-sm rounded-xl">
+                      <div className="flex items-center gap-1.5 truncate">
+                        <span className="text-slate-500 text-xs font-normal">Status:</span>
+                        <SelectValue placeholder="All" />
+                      </div>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {STATUS_OPTIONS.map((status) => (
+                        <SelectItem key={status} value={status}>
+                          {status}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Barangay Filter */}
+                <div className="w-full sm:w-48">
+                  <Select
+                    value={selectedBarangay}
+                    onValueChange={(val) => val && setSelectedBarangay(val)}
+                  >
+                    <SelectTrigger className="w-full h-10 px-3 bg-slate-50/60 border-slate-300 text-sm rounded-xl">
+                      <div className="flex items-center gap-1.5 truncate">
+                        <span className="text-slate-500 text-xs font-normal">Barangay:</span>
+                        <SelectValue placeholder="All Barangays" />
+                      </div>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {BARANGAY_OPTIONS.map((bg) => (
+                        <SelectItem key={bg} value={bg}>
+                          {bg}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Clear / Reset Filters */}
+                {hasActiveFilters && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={clearFilters}
+                    className="h-10 px-3 text-xs font-semibold text-slate-700 border-slate-300 hover:bg-slate-100 hover:text-slate-900 rounded-xl cursor-pointer gap-1.5 shrink-0"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Clear Filters</span>
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            {/* Filter Status Feedback Bar */}
+            <div className="flex items-center justify-between text-xs text-slate-500 pt-1 px-0.5">
+              <div className="flex items-center gap-2">
+                <span>
+                  Showing <strong className="text-slate-900">{filteredApplications.length}</strong> of{" "}
+                  <strong>{totalCount}</strong> applications
+                </span>
+                {hasActiveFilters && (
+                  <span className="inline-flex items-center gap-1 text-[11px] text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md font-medium">
+                    <Filter className="w-3 h-3" />
+                    Filtered results
+                  </span>
+                )}
+              </div>
+
+              {hasActiveFilters && (
+                <button
+                  type="button"
+                  onClick={clearFilters}
+                  className="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer text-xs font-medium"
+                >
+                  Reset all
+                </button>
               )}
-            >
-              Return to Admin Dashboard
-            </Link>
+            </div>
           </div>
         </CardContent>
       </Card>
+
+      {/* 3. Applications Table */}
+      <Card className="bg-white border border-slate-200/90 rounded-2xl shadow-xs overflow-hidden">
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow className="border-b border-slate-200 bg-slate-50/80">
+                  <TableHead className="font-bold text-slate-700 py-3.5">Application Number</TableHead>
+                  <TableHead className="font-bold text-slate-700">Business Name</TableHead>
+                  <TableHead className="font-bold text-slate-700">Owner</TableHead>
+                  <TableHead className="font-bold text-slate-700">Barangay</TableHead>
+                  <TableHead className="font-bold text-slate-700">Submitted</TableHead>
+                  <TableHead className="font-bold text-slate-700">Status</TableHead>
+                  <TableHead className="font-bold text-slate-700 text-right pr-6">Action</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredApplications.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="py-12 text-center">
+                      <div className="flex flex-col items-center justify-center space-y-3">
+                        <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center">
+                          <SlidersHorizontal className="w-6 h-6" />
+                        </div>
+                        <div className="space-y-1">
+                          <h4 className="text-sm font-bold text-slate-800">
+                            No applications match your criteria
+                          </h4>
+                          <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                            Try adjusting your search terms or clearing status and barangay filters.
+                          </p>
+                        </div>
+                        {hasActiveFilters && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={clearFilters}
+                            className="text-xs font-semibold text-blue-700 border-blue-200 hover:bg-blue-50 cursor-pointer"
+                          >
+                            Clear Filters
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filteredApplications.map((app) => (
+                    <TableRow
+                      key={app.id}
+                      className="hover:bg-slate-50/70 transition-colors border-b border-slate-100"
+                    >
+                      {/* Application Number */}
+                      <TableCell className="font-mono text-xs font-bold text-blue-900 whitespace-nowrap">
+                        <Link
+                          href={`/admin/applications/${app.id}`}
+                          className="hover:underline flex items-center gap-1.5 text-blue-700 hover:text-blue-900"
+                        >
+                          <FileText className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                          <span>{app.id}</span>
+                        </Link>
+                      </TableCell>
+
+                      {/* Business Name */}
+                      <TableCell className="font-semibold text-slate-900 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5">
+                          <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                          <span>{app.businessName}</span>
+                        </div>
+                      </TableCell>
+
+                      {/* Owner */}
+                      <TableCell className="text-slate-700 whitespace-nowrap">
+                        {app.owner}
+                      </TableCell>
+
+                      {/* Barangay */}
+                      <TableCell className="text-slate-600 whitespace-nowrap">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-xs font-medium">
+                          {app.barangay}
+                        </span>
+                      </TableCell>
+
+                      {/* Submitted */}
+                      <TableCell className="text-xs text-slate-500 whitespace-nowrap">
+                        {app.submitted}
+                      </TableCell>
+
+                      {/* Status */}
+                      <TableCell className="whitespace-nowrap">
+                        {getStatusBadge(app.status)}
+                      </TableCell>
+
+                      {/* Action */}
+                      <TableCell className="text-right whitespace-nowrap pr-6">
+                        <Link
+                          href={`/admin/applications/${app.id}`}
+                          className={cn(
+                            buttonVariants({ variant: "outline", size: "sm" }),
+                            "h-8 px-3 text-xs font-semibold text-blue-700 border-blue-200 hover:bg-blue-50 hover:text-blue-900 cursor-pointer gap-1.5 rounded-lg shadow-2xs"
+                          )}
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>View</span>
+                        </Link>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Helpful footer notes */}
+      <div className="flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-2 px-1">
+        <p>
+          Butuan City Public Market & Vendor Licensing Division — Administrator Review Console
+        </p>
+        <p className="font-mono text-[11px] text-slate-400">
+          Showing local registry records (Mock UI Mode)
+        </p>
+      </div>
     </div>
   );
 }

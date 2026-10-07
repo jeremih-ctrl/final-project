@@ -36,8 +36,11 @@ import {
   Check,
   X,
   FileCheck2,
+  Bell,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useSharedApplication } from "@/lib/vendor-application-state";
+import { useStoredApplications } from "@/lib/application-store";
 
 interface ApplicationRecord {
   id: string;
@@ -45,7 +48,7 @@ interface ApplicationRecord {
   owner: string;
   barangay: string;
   submitted: string;
-  status: "Under Review" | "Approved" | "Needs Correction" | "Submitted" | "Rejected";
+  status: "Under Review" | "Approved" | "Needs Correction" | "Correction Submitted" | "Submitted" | "Rejected";
   contact: string;
   email: string;
   document: string;
@@ -109,10 +112,111 @@ const RECENT_APPLICATIONS: ApplicationRecord[] = [
   },
 ];
 
+function formatSubmittedDate(dateStr: string | null | undefined): string {
+  if (!dateStr) return "Oct 7, 2026";
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    return d.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  } catch {
+    return dateStr;
+  }
+}
+
+function mapStoreStatusToAdminStatus(
+  status: string
+): ApplicationRecord["status"] {
+  switch (status.toLowerCase()) {
+    case "approved":
+      return "Approved";
+    case "under_review":
+    case "under review":
+      return "Under Review";
+    case "needs_correction":
+    case "needs correction":
+      return "Needs Correction";
+    case "correction_submitted":
+    case "correction submitted":
+      return "Correction Submitted";
+    case "rejected":
+      return "Rejected";
+    case "submitted":
+    case "draft":
+    default:
+      return "Submitted";
+  }
+}
+
 export default function AdminDashboardPage() {
+  const { application: sharedApp, updateStatus } = useSharedApplication();
+  const storedApplications = useStoredApplications();
   const [selectedApp, setSelectedApp] = useState<ApplicationRecord | null>(null);
   const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
   const [feedbackNotice, setFeedbackNotice] = useState<string | null>(null);
+
+  // Map real applications from shared localStorage store
+  const storedRecords: (ApplicationRecord & { sortTime: number })[] =
+    storedApplications.map((app) => ({
+      id: app.applicationNumber || app.id,
+      businessName: app.business.businessName,
+      owner: app.owner.ownerName,
+      barangay: app.address.barangay,
+      submitted: formatSubmittedDate(app.submittedAt),
+      status: mapStoreStatusToAdminStatus(app.status),
+      contact: app.contact.contactNumber,
+      email: app.contact.emailAddress,
+      document:
+        app.documents?.[0]?.filename ||
+        app.documents?.[0]?.idFileName ||
+        "government-id.pdf",
+      sortTime: app.submittedAt ? new Date(app.submittedAt).getTime() : 0,
+    }));
+
+  const storedIds = new Set(storedRecords.map((r) => r.id.toLowerCase()));
+
+  // Seed mock applications with baseline timestamps
+  const mockRecordsWithTimestamps: (ApplicationRecord & { sortTime: number })[] = [
+    {
+      ...RECENT_APPLICATIONS[0],
+      status:
+        sharedApp.id === RECENT_APPLICATIONS[0].id
+          ? (sharedApp.adminStatus as ApplicationRecord["status"])
+          : RECENT_APPLICATIONS[0].status,
+      sortTime: new Date("2026-10-06T10:00:00Z").getTime(),
+    },
+    {
+      ...RECENT_APPLICATIONS[1],
+      sortTime: new Date("2026-10-06T09:00:00Z").getTime(),
+    },
+    {
+      ...RECENT_APPLICATIONS[2],
+      sortTime: new Date("2026-10-05T14:00:00Z").getTime(),
+    },
+    {
+      ...RECENT_APPLICATIONS[3],
+      sortTime: new Date("2026-10-05T11:00:00Z").getTime(),
+    },
+    {
+      ...RECENT_APPLICATIONS[4],
+      sortTime: new Date("2026-10-04T08:00:00Z").getTime(),
+    },
+  ];
+
+  // Merge stored applications and seed mock data, sorted by submittedAt descending
+  const recentApplications = [
+    ...storedRecords,
+    ...mockRecordsWithTimestamps.filter((m) => !storedIds.has(m.id.toLowerCase())),
+  ].sort((a, b) => b.sortTime - a.sortTime);
+
+  const activeSelectedApp = selectedApp
+    ? selectedApp.id === sharedApp.id
+      ? { ...selectedApp, status: sharedApp.adminStatus as ApplicationRecord["status"] }
+      : selectedApp
+    : null;
 
   const getStatusBadge = (status: ApplicationRecord["status"]) => {
     switch (status) {
@@ -132,6 +236,12 @@ export default function AdminDashboardPage() {
         return (
           <Badge className="bg-rose-50 text-rose-800 border-rose-200 text-xs font-semibold">
             Needs Correction
+          </Badge>
+        );
+      case "Correction Submitted":
+        return (
+          <Badge className="bg-purple-50 text-purple-800 border-purple-200 text-xs font-semibold">
+            Correction Submitted
           </Badge>
         );
       case "Submitted":
@@ -494,7 +604,7 @@ export default function AdminDashboardPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {RECENT_APPLICATIONS.map((app) => (
+                    {recentApplications.map((app) => (
                       <TableRow key={app.id}>
                         <TableCell className="font-mono text-xs font-bold text-slate-900">
                           {app.id}
@@ -515,18 +625,29 @@ export default function AdminDashboardPage() {
                           {getStatusBadge(app.status)}
                         </TableCell>
                         <TableCell className="text-right">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              setSelectedApp(app);
-                              setReviewDialogOpen(true);
-                            }}
-                            className="h-8 px-2.5 text-xs font-semibold text-blue-700 border-blue-200 hover:bg-blue-50 cursor-pointer gap-1"
-                          >
-                            <Eye className="w-3.5 h-3.5" />
-                            <span>View</span>
-                          </Button>
+                          <div className="flex items-center justify-end gap-1.5">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setSelectedApp(app);
+                                setReviewDialogOpen(true);
+                              }}
+                              className="h-8 px-2 text-xs font-semibold text-slate-600 hover:text-slate-900 cursor-pointer"
+                            >
+                              Quick Review
+                            </Button>
+                            <Link
+                              href={`/admin/applications/${app.id}`}
+                              className={cn(
+                                buttonVariants({ variant: "outline", size: "sm" }),
+                                "h-8 px-2.5 text-xs font-semibold text-blue-700 border-blue-200 hover:bg-blue-50 cursor-pointer gap-1"
+                              )}
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                              <span>View</span>
+                            </Link>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -537,86 +658,101 @@ export default function AdminDashboardPage() {
           </Card>
         </div>
 
-        {/* Right 1 Col: 9. Recent Activity */}
+        {/* Right 1 Col: 9. Recent Activity & Notifications Preview (Task 10 Requirement 9) */}
         <div className="space-y-6">
           <Card className="bg-white border border-slate-200/90 rounded-2xl shadow-xs overflow-hidden">
             <CardHeader className="p-5 pb-3 border-b border-slate-100 flex flex-row items-center justify-between">
-              <CardTitle className="text-base font-bold text-slate-900">
-                Recent Activity
-              </CardTitle>
-              <Clock className="w-4 h-4 text-slate-400" />
+              <div className="flex items-center gap-2">
+                <Bell className="w-4 h-4 text-blue-700" />
+                <CardTitle className="text-base font-bold text-slate-900">
+                  Recent Notifications
+                </CardTitle>
+              </div>
+              <Badge className="bg-blue-700 text-white text-[10px] font-bold">
+                2 New
+              </Badge>
             </CardHeader>
 
             <CardContent className="p-5 space-y-4">
-              <div className="space-y-4">
-                {/* Activity 1 */}
+              <div className="space-y-3.5">
+                {/* Event 1: Correction submitted */}
                 <div className="flex items-start gap-3">
-                  <div className="w-2.5 h-2.5 rounded-full bg-blue-500 mt-1.5 shrink-0" />
-                  <div className="space-y-0.5 min-w-0">
-                    <p className="text-xs font-semibold text-slate-900 leading-snug">
-                      Application BVR-2026-001248 submitted.
-                    </p>
-                    <div className="flex items-center gap-2 text-[11px] text-slate-400">
-                      <span>Juan&apos;s Food Stall</span>
-                      <span>•</span>
-                      <span>10m ago</span>
+                  <div className="w-2.5 h-2.5 rounded-full bg-orange-500 mt-1.5 shrink-0 ring-4 ring-orange-100" />
+                  <div className="space-y-0.5 min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-1">
+                      <p className="text-xs font-bold text-slate-900 leading-snug">
+                        Vendor Submitted Corrections
+                      </p>
+                      <span className="text-[10px] text-blue-700 font-semibold shrink-0">Just now</span>
                     </div>
+                    <p className="text-xs text-slate-600">
+                      Juan&apos;s Food Stall resubmitted address &amp; ID.
+                    </p>
+                    <span className="font-mono text-[10px] font-bold text-slate-500 block">
+                      BVR-2026-001248
+                    </span>
                   </div>
                 </div>
 
                 <div className="border-t border-slate-100" />
 
-                {/* Activity 2 */}
+                {/* Event 2: New application submitted */}
+                <div className="flex items-start gap-3">
+                  <div className="w-2.5 h-2.5 rounded-full bg-blue-600 mt-1.5 shrink-0 ring-4 ring-blue-100" />
+                  <div className="space-y-0.5 min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-1">
+                      <p className="text-xs font-bold text-slate-900 leading-snug">
+                        New Application Submitted
+                      </p>
+                      <span className="text-[10px] text-slate-400 shrink-0">10m ago</span>
+                    </div>
+                    <p className="text-xs text-slate-600">
+                      Juan Dela Cruz queued for review.
+                    </p>
+                    <span className="font-mono text-[10px] font-bold text-slate-500 block">
+                      BVR-2026-001248 • Baan KM 3
+                    </span>
+                  </div>
+                </div>
+
+                <div className="border-t border-slate-100" />
+
+                {/* Event 3: Application approved */}
                 <div className="flex items-start gap-3">
                   <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 mt-1.5 shrink-0" />
-                  <div className="space-y-0.5 min-w-0">
-                    <p className="text-xs font-semibold text-slate-900 leading-snug">
-                      Vendor Maria&apos;s Sari-Sari Store was approved.
-                    </p>
-                    <div className="flex items-center gap-2 text-[11px] text-slate-400">
-                      <span>BVR-2026-001247</span>
-                      <span>•</span>
-                      <span>2h ago</span>
+                  <div className="space-y-0.5 min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-1">
+                      <p className="text-xs font-semibold text-slate-900 leading-snug">
+                        Application Approved
+                      </p>
+                      <span className="text-[10px] text-slate-400 shrink-0">2h ago</span>
                     </div>
+                    <p className="text-xs text-slate-600">
+                      Maria&apos;s Sari-Sari Store issued Vendor ID BUT-V-001247.
+                    </p>
                   </div>
                 </div>
 
                 <div className="border-t border-slate-100" />
 
-                {/* Activity 3 */}
-                <div className="flex items-start gap-3">
-                  <div className="w-2.5 h-2.5 rounded-full bg-rose-500 mt-1.5 shrink-0" />
-                  <div className="space-y-0.5 min-w-0">
-                    <p className="text-xs font-semibold text-slate-900 leading-snug">
-                      Application BVR-2026-001246 requires correction.
-                    </p>
-                    <div className="flex items-center gap-2 text-[11px] text-slate-400">
-                      <span>Pedro BBQ (Ampayon)</span>
-                      <span>•</span>
-                      <span>Yesterday</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="border-t border-slate-100" />
-
-                {/* Activity 4 */}
+                {/* Event 4: Correction requested */}
                 <div className="flex items-start gap-3">
                   <div className="w-2.5 h-2.5 rounded-full bg-amber-500 mt-1.5 shrink-0" />
-                  <div className="space-y-0.5 min-w-0">
-                    <p className="text-xs font-semibold text-slate-900 leading-snug">
-                      Government ID attached to BVR-2026-001248.
-                    </p>
-                    <div className="flex items-center gap-2 text-[11px] text-slate-400">
-                      <span>government-id.pdf</span>
-                      <span>•</span>
-                      <span>Oct 6, 2026</span>
+                  <div className="space-y-0.5 min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-1">
+                      <p className="text-xs font-semibold text-slate-900 leading-snug">
+                        Correction Requested
+                      </p>
+                      <span className="text-[10px] text-slate-400 shrink-0">Yesterday</span>
                     </div>
+                    <p className="text-xs text-slate-600">
+                      Pedro BBQ flagged for incomplete coordinates.
+                    </p>
                   </div>
                 </div>
               </div>
 
-              <div className="pt-2">
+              <div className="pt-2 border-t border-slate-100">
                 <Link
                   href="/admin/notifications"
                   className={cn(
@@ -624,7 +760,7 @@ export default function AdminDashboardPage() {
                     "w-full text-xs font-semibold text-blue-700 hover:text-blue-800 hover:bg-blue-50 cursor-pointer justify-center"
                   )}
                 >
-                  View Complete Audit Log
+                  View Notifications
                 </Link>
               </div>
             </CardContent>
@@ -634,17 +770,17 @@ export default function AdminDashboardPage() {
 
       {/* Application Review Dialog (Triggered from Table Action) */}
       <Dialog open={reviewDialogOpen} onOpenChange={setReviewDialogOpen}>
-        {selectedApp && (
+        {activeSelectedApp && (
           <DialogContent className="sm:max-w-lg">
             <DialogHeader>
               <div className="flex items-center justify-between pr-6">
                 <span className="font-mono text-xs font-bold text-slate-500">
-                  {selectedApp.id}
+                  {activeSelectedApp.id}
                 </span>
-                {getStatusBadge(selectedApp.status)}
+                {getStatusBadge(activeSelectedApp.status)}
               </div>
               <DialogTitle className="text-lg font-bold text-slate-900">
-                {selectedApp.businessName}
+                {activeSelectedApp.businessName}
               </DialogTitle>
               <DialogDescription>
                 Registration Details for City Licensing Evaluation
@@ -655,19 +791,19 @@ export default function AdminDashboardPage() {
               <div className="grid grid-cols-2 gap-3 p-3.5 rounded-xl bg-slate-50 border border-slate-200/80">
                 <div>
                   <span className="text-slate-500 text-xs block">Owner:</span>
-                  <span className="font-semibold text-slate-900">{selectedApp.owner}</span>
+                  <span className="font-semibold text-slate-900">{activeSelectedApp.owner}</span>
                 </div>
                 <div>
                   <span className="text-slate-500 text-xs block">Barangay:</span>
-                  <span className="font-semibold text-slate-900">{selectedApp.barangay}</span>
+                  <span className="font-semibold text-slate-900">{activeSelectedApp.barangay}</span>
                 </div>
                 <div>
                   <span className="text-slate-500 text-xs block">Contact:</span>
-                  <span className="font-mono font-semibold text-slate-900">{selectedApp.contact}</span>
+                  <span className="font-mono font-semibold text-slate-900">{activeSelectedApp.contact}</span>
                 </div>
                 <div>
                   <span className="text-slate-500 text-xs block">Email:</span>
-                  <span className="font-semibold text-slate-900">{selectedApp.email}</span>
+                  <span className="font-semibold text-slate-900">{activeSelectedApp.email}</span>
                 </div>
               </div>
 
@@ -678,10 +814,10 @@ export default function AdminDashboardPage() {
                   </div>
                   <div>
                     <span className="font-semibold text-slate-900 block text-xs">
-                      {selectedApp.document}
+                      {activeSelectedApp.document}
                     </span>
                     <span className="text-[11px] text-slate-500">
-                      Uploaded on {selectedApp.submitted}
+                      Uploaded on {activeSelectedApp.submitted}
                     </span>
                   </div>
                 </div>
@@ -690,7 +826,7 @@ export default function AdminDashboardPage() {
                 </Badge>
               </div>
 
-              {/* Action Buttons (UI simulation only) */}
+              {/* Action Buttons (Synced to shared application state) */}
               <div className="space-y-2 pt-2 border-t border-slate-100">
                 <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
                   Simulated Administrative Decision
@@ -698,9 +834,12 @@ export default function AdminDashboardPage() {
                 <div className="grid grid-cols-3 gap-2">
                   <Button
                     size="sm"
-                    onClick={() =>
-                      handleAction(`Application ${selectedApp.id} was marked as Approved.`)
-                    }
+                    onClick={() => {
+                      if (activeSelectedApp.id === sharedApp.id) {
+                        updateStatus("approved");
+                      }
+                      handleAction(`Application ${activeSelectedApp.id} was marked as Approved.`);
+                    }}
                     className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold cursor-pointer gap-1"
                   >
                     <Check className="w-3.5 h-3.5" />
@@ -709,9 +848,12 @@ export default function AdminDashboardPage() {
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() =>
-                      handleAction(`Correction request sent for ${selectedApp.id}.`)
-                    }
+                    onClick={() => {
+                      if (activeSelectedApp.id === sharedApp.id) {
+                        updateStatus("needs-correction");
+                      }
+                      handleAction(`Correction request sent for ${activeSelectedApp.id}.`);
+                    }}
                     className="text-amber-800 border-amber-300 hover:bg-amber-50 text-xs font-semibold cursor-pointer gap-1"
                   >
                     <AlertCircle className="w-3.5 h-3.5" />
@@ -720,9 +862,12 @@ export default function AdminDashboardPage() {
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() =>
-                      handleAction(`Application ${selectedApp.id} was rejected.`)
-                    }
+                    onClick={() => {
+                      if (activeSelectedApp.id === sharedApp.id) {
+                        updateStatus("rejected");
+                      }
+                      handleAction(`Application ${activeSelectedApp.id} was rejected.`);
+                    }}
                     className="text-rose-800 border-rose-300 hover:bg-rose-50 text-xs font-semibold cursor-pointer gap-1"
                   >
                     <X className="w-3.5 h-3.5" />
