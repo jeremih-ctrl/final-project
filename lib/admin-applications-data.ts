@@ -72,19 +72,19 @@ export const STATUS_OPTIONS = [
 export const MOCK_APPLICATIONS: AdminApplication[] = [
   {
     id: "BVR-2026-001248",
-    businessName: "Juan's Food Stall",
-    owner: "Juan Dela Cruz",
-    barangay: "Baan KM 3",
+    businessName: "Montilla Street Produce & Snacks",
+    owner: "Maria Santos",
+    barangay: "Urduja",
     submitted: "Oct 6, 2026",
     status: "Under Review",
     businessDescription:
-      "Local food vendor serving affordable meals and snacks.",
-    contactNumber: "09XXXXXXXXX",
-    email: "juan@email.com",
+      "Produce, local snacks, and fresh goods in Butuan City.",
+    contactNumber: "09181234567",
+    email: "maria.santos@email.com",
     address: {
       houseNumber: "123",
-      street: "J.C. Aquino Avenue",
-      barangay: "Baan KM 3",
+      street: "Montilla Boulevard",
+      barangay: "Urduja",
       city: "Butuan City",
       province: "Agusan del Norte",
       region: "Caraga",

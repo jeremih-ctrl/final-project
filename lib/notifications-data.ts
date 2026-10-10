@@ -109,59 +109,98 @@ export function getCategoryForType(type: string): NotificationCategory {
 }
 
 /**
- * Calculates a sensible relative time string from a createdAt timestamp.
- * Returns: "Just now", "1m ago", "5m ago", "18m ago", "1h ago", "Yesterday", "2d ago", etc.
+ * Safely parses various date formats (ISO-8601, unix ms, Date instances, or strings with bullets)
+ * Returns a valid Date or null if missing or invalid.
+ */
+export function parseDateSafely(
+  dateInput?: string | Date | number | null
+): Date | null {
+  if (dateInput === null || dateInput === undefined || dateInput === "") {
+    return null;
+  }
+  if (dateInput instanceof Date) {
+    return isNaN(dateInput.getTime()) ? null : dateInput;
+  }
+  if (typeof dateInput === "number") {
+    if (isNaN(dateInput) || dateInput <= 0) return null;
+    const d = new Date(dateInput);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  if (typeof dateInput === "string") {
+    const trimmed = dateInput.trim();
+    if (!trimmed) return null;
+
+    // Standard Date parsing (ISO-8601 strings, UTC/GMT)
+    const directDate = new Date(trimmed);
+    if (!isNaN(directDate.getTime())) {
+      return directDate;
+    }
+
+    // Handles formatted strings containing bullets like "Oct 10, 2026 • 4:30 PM"
+    const cleaned = trimmed.replace(/[•·|]/g, " ").replace(/\s+/g, " ").trim();
+    const cleanedDate = new Date(cleaned);
+    if (!isNaN(cleanedDate.getTime())) {
+      return cleanedDate;
+    }
+  }
+  return null;
+}
+
+/**
+ * Calculates an independent relative time string for each notification.
+ * Output examples: "Just now", "5 minutes ago", "2 hours ago", "Yesterday", "3 days ago", "2 weeks ago".
+ * Safely displays "Date unavailable" if the timestamp is missing or unparseable.
  */
 export function formatRelativeTime(
-  dateInput: string | Date | number,
+  dateInput?: string | Date | number | null,
   nowInput: number = Date.now()
 ): string {
-  if (!dateInput) return "Just now";
-  const date =
-    typeof dateInput === "string" || typeof dateInput === "number"
-      ? new Date(dateInput)
-      : dateInput;
+  const date = parseDateSafely(dateInput);
+  if (!date) {
+    return "Date unavailable";
+  }
+
   const time = date.getTime();
-  if (isNaN(time)) return "Just now";
-
   const diffInMs = nowInput - time;
-  const diffInSeconds = Math.max(0, Math.floor(diffInMs / 1000));
 
-  if (diffInSeconds < 60) {
+  // Immediate or future timestamps
+  if (diffInMs < 0 || diffInMs < 60 * 1000) {
     return "Just now";
   }
 
+  const diffInSeconds = Math.floor(diffInMs / 1000);
   const diffInMinutes = Math.floor(diffInSeconds / 60);
-  if (diffInMinutes < 60) {
-    return `${diffInMinutes}m ago`;
-  }
-
   const diffInHours = Math.floor(diffInMinutes / 60);
-  if (diffInHours < 24) {
-    return `${diffInHours}h ago`;
+  const diffInDays = Math.floor(diffInHours / 24);
+
+  if (diffInMinutes < 60) {
+    return diffInMinutes === 1 ? "1 minute ago" : `${diffInMinutes} minutes ago`;
   }
 
-  const diffInDays = Math.floor(diffInHours / 24);
+  if (diffInHours < 24) {
+    return diffInHours === 1 ? "1 hour ago" : `${diffInHours} hours ago`;
+  }
+
   if (diffInDays === 1) {
     return "Yesterday";
   }
 
   if (diffInDays < 7) {
-    return `${diffInDays}d ago`;
+    return `${diffInDays} days ago`;
   }
 
   const diffInWeeks = Math.floor(diffInDays / 7);
-  if (diffInWeeks < 5) {
-    return `${diffInWeeks}w ago`;
+  if (diffInWeeks < 4) {
+    return diffInWeeks === 1 ? "1 week ago" : `${diffInWeeks} weeks ago`;
   }
 
   const diffInMonths = Math.floor(diffInDays / 30);
   if (diffInMonths < 12) {
-    return `${diffInMonths}mo ago`;
+    return diffInMonths === 1 ? "1 month ago" : `${diffInMonths} months ago`;
   }
 
   const diffInYears = Math.floor(diffInDays / 365);
-  return `${diffInYears}y ago`;
+  return diffInYears === 1 ? "1 year ago" : `${diffInYears} years ago`;
 }
 
 /** Realistic initial admin notifications */
@@ -317,9 +356,9 @@ export function createInitialVendorNotifications(
       status: "Submitted",
       read: true,
       createdAt: new Date(refTime - 25 * 60 * 60 * 1000).toISOString(),
-      actionLabel: "View Application",
-      actionUrl: "/dashboard/my-application",
-      href: "/dashboard/my-application",
+      actionLabel: "View Application Status",
+      actionUrl: "/application-status",
+      href: "/application-status",
       priority: "normal",
     },
     {

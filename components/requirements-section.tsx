@@ -1,4 +1,6 @@
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+"use client";
+
+import { motion } from "framer-motion";
 import { Badge } from "@/components/ui/badge";
 import {
   Building,
@@ -8,8 +10,10 @@ import {
   MapPin,
   IdCard,
   Lock,
-  AlertCircle
+  AlertCircle,
 } from "lucide-react";
+import { SpotlightCard } from "@/components/reactbits/SpotlightCard";
+import { ShinyText } from "@/components/reactbits/ShinyText";
 
 export function RequirementsSection() {
   const requirements = [
@@ -46,9 +50,9 @@ export function RequirementsSection() {
     {
       title: "Government ID",
       description:
-        "PhilSys National ID, Driver's License, Voter's ID, or Postal ID. Can be uploaded now or submitted later.",
+        "Upload one valid government-issued ID for identity verification. Accepted IDs include PhilSys National ID, Driver's License, Voter's ID, or Postal ID and passport.",
       icon: IdCard,
-      isOptional: true, // Clearly marked as Optional
+      isOptional: false,
     },
     {
       title: "Password",
@@ -59,84 +63,100 @@ export function RequirementsSection() {
   ];
 
   return (
-    <section id="requirements" className="py-16 sm:py-20 bg-slate-50/60">
+    <section id="requirements" className="py-20 sm:py-24 bg-[#F8FAFD]">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Section Header */}
-        <div className="text-center max-w-3xl mx-auto space-y-3 mb-12 sm:mb-16">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-100/70 border border-blue-200 text-blue-800 text-xs font-semibold uppercase tracking-wider">
-            Preparation Checklist
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, amount: 0.3 }}
+          transition={{ duration: 0.6, ease: "easeOut" }}
+          className="text-center max-w-3xl mx-auto space-y-3 mb-14 sm:mb-16"
+        >
+          <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-blue-50 border border-blue-200 text-[#155EEF] text-xs font-semibold uppercase tracking-wider shadow-2xs">
+            <ShinyText
+              text="Preparation Checklist"
+              className="text-[#155EEF]"
+              shimmerColor="rgba(255, 255, 255, 0.9)"
+            />
           </div>
-          <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900">
+          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-[#0F1E36]">
             Initial Registration Requirements
           </h2>
           <p className="text-base sm:text-lg text-slate-600 font-normal leading-relaxed">
             Have the following basic information ready before starting. The process is quick, simple, and takes only a few minutes.
           </p>
-        </div>
+        </motion.div>
 
-        {/* Requirements Grid */}
+        {/* Requirements Grid with React Bits SpotlightCard & Motion Stagger */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {requirements.map((req) => {
+          {requirements.map((req, index) => {
             const Icon = req.icon;
             return (
-              <Card
+              <motion.div
                 key={req.title}
-                className={`bg-white border rounded-2xl shadow-xs transition-all hover:shadow-sm ${
-                  req.isOptional
-                    ? "border-blue-300/80 bg-blue-50/20 ring-1 ring-blue-500/10"
-                    : "border-slate-200/90"
-                }`}
+                initial={{ opacity: 0, y: 24 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, amount: 0.15 }}
+                transition={{ duration: 0.5, delay: index * 0.08, ease: "easeOut" }}
+                whileHover={{ y: -3 }}
+                className="h-full"
               >
-                <CardHeader className="p-5 pb-3">
-                  <div className="flex items-start justify-between gap-3 mb-2">
-                    <div
-                      className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-                        req.isOptional
-                          ? "bg-blue-100 text-blue-700"
-                          : "bg-slate-100 text-slate-700"
-                      }`}
-                    >
-                      <Icon className="w-5 h-5" />
+                <SpotlightCard
+                  spotlightColor="rgba(21, 94, 239, 0.10)"
+                  className="bg-white border border-slate-200/90 rounded-[18px] shadow-xs hover:shadow-md transition-all duration-300 hover:border-blue-300 h-full p-6 flex flex-col justify-between"
+                >
+                  <div>
+                    <div className="flex items-start justify-between gap-3 mb-4">
+                      <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-200 text-[#155EEF] flex items-center justify-center shrink-0 shadow-2xs group-hover:bg-[#155EEF] group-hover:text-white transition-colors">
+                        <Icon className="w-5 h-5 stroke-[2.2]" />
+                      </div>
+
+                      {req.isOptional ? (
+                        <Badge className="bg-slate-100 text-slate-700 border border-slate-200 font-medium px-2.5 py-0.5 text-xs">
+                          Optional
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-[#155EEF] bg-blue-50/70 border-blue-200 font-semibold text-xs">
+                          Required
+                        </Badge>
+                      )}
                     </div>
 
-                    {req.isOptional ? (
-                      <Badge className="bg-amber-100 text-amber-900 border border-amber-300 font-semibold px-2.5 py-0.5 text-xs">
-                        Optional
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline" className="text-slate-500 border-slate-200 text-xs">
-                        Required
-                      </Badge>
-                    )}
+                    <h3 className="text-base sm:text-lg font-bold text-[#0F1E36] mb-2 flex items-center gap-2">
+                      {req.title}
+                      {req.isOptional && (
+                        <span className="text-xs font-normal text-slate-400">
+                          (Optional)
+                        </span>
+                      )}
+                    </h3>
+
+                    <p className="text-xs sm:text-sm text-slate-500 leading-relaxed">
+                      {req.description}
+                    </p>
                   </div>
-
-                  <CardTitle className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                    {req.title}
-                    {req.isOptional && (
-                      <span className="text-xs font-normal text-amber-700">
-                        (Optional)
-                      </span>
-                    )}
-                  </CardTitle>
-                </CardHeader>
-
-                <CardContent className="px-5 pb-5 pt-0">
-                  <p className="text-sm text-slate-600 leading-relaxed">
-                    {req.description}
-                  </p>
-                </CardContent>
-              </Card>
+                </SpotlightCard>
+              </motion.div>
             );
           })}
         </div>
 
         {/* Informative Note Box */}
-        <div className="mt-10 rounded-xl bg-white border border-slate-200 p-4 sm:p-5 flex items-start sm:items-center gap-3 shadow-xs">
-          <AlertCircle className="w-5 h-5 text-blue-600 shrink-0 mt-0.5 sm:mt-0" />
+        <motion.div
+          initial={{ opacity: 0, y: 15 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, amount: 0.3 }}
+          transition={{ duration: 0.5, delay: 0.2 }}
+          className="mt-12 rounded-[18px] bg-white border border-slate-200/90 p-6 sm:p-7 flex items-start sm:items-center gap-4 shadow-xs"
+        >
+          <div className="w-10 h-10 rounded-xl bg-blue-50 text-[#155EEF] flex items-center justify-center shrink-0">
+            <AlertCircle className="w-5 h-5" />
+          </div>
           <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
-            <strong className="text-slate-900 font-semibold">Note on Government ID:</strong> Providing a valid government ID during registration accelerates verification, but you may proceed without one and submit it at a later date when requested by the administrator.
+            <strong className="text-[#0F1E36] font-semibold">Note on Government ID:</strong> Upload one valid government-issued ID for identity verification. Accepted IDs include PhilSys National ID, Driver&apos;s License, Voter&apos;s ID, Postal ID, or Passport.
           </p>
-        </div>
+        </motion.div>
       </div>
     </section>
   );

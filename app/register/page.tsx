@@ -57,6 +57,8 @@ import {
   addAdminNotification,
   addVendorNotification,
 } from "@/lib/notifications-data";
+import { setVendorSession } from "@/lib/demo-auth";
+import { saveSharedApplication } from "@/lib/vendor-application-state";
 
 const STEPS = [
   { id: 1, name: "Business", title: "Business Information" },
@@ -69,9 +71,11 @@ const STEPS = [
 import { BUTUAN_BARANGAYS } from "@/lib/barangays";
 
 const ID_TYPES = [
+  "PhilSys National ID",
   "Driver's License",
+  "Voter's ID",
+  "Postal ID",
   "Passport",
-  "PhilSys ID",
   "UMID",
   "Other",
 ];
@@ -81,7 +85,7 @@ export default function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [successModalOpen, setSuccessModalOpen] = useState(false);
-  const [createdAppNumber, setCreatedAppNumber] = useState<string>("BVR-2026-001248");
+  const [createdAppNumber, setCreatedAppNumber] = useState<string>("");
 
   // Form State (Starts empty so validation on required fields can be tested)
   const [formData, setFormData] = useState({
@@ -97,7 +101,7 @@ export default function RegisterPage() {
     street: "",
     barangay: "",
 
-    // Step 3: Verification (Optional)
+    // Step 3: Verification (Required)
     idType: "",
     idNumber: "",
     idFileName: "",
@@ -126,29 +130,6 @@ export default function RegisterPage() {
     }
   };
 
-  // Pre-fill demo data for rapid testing
-  const handleFillDemo = () => {
-    setFormData({
-      businessName: "Aling Nena's Native Delicacies",
-      ownerName: "Nena M. Alcantara",
-      businessDescription: "Selling homemade delicacies and native snacks at Butuan Public Market.",
-      contactNumber: "09171234567",
-      emailAddress: "nena.alcantara@example.com",
-      houseNo: "Stall No. 14, Building B",
-      street: "Montilla Boulevard",
-      barangay: "San Vicente",
-      idType: "PhilSys ID",
-      idNumber: "1234-5678-9012",
-      idFileName: "philsys_sample.jpg",
-      isSkippedId: false,
-      password: "Password123",
-      confirmPassword: "Password123",
-      agreeTerms: true,
-      agreePrivacy: true,
-    });
-    setErrors({});
-    setFileError("");
-  };
 
   // 1. Step 1 Validation
   const validateStep1 = (): boolean => {
@@ -202,26 +183,23 @@ export default function RegisterPage() {
     return Object.keys(newErrors).length === 0;
   };
 
-  // 3. Step 3 Validation (Government ID is Optional)
+  // 3. Step 3 Validation (Government ID is Required)
   const validateStep3 = (): boolean => {
     const newErrors: Record<string, string> = {};
 
-    // If skipped or completely empty, no validation required
-    const hasStartedId =
-      Boolean(formData.idType) ||
-      Boolean(formData.idNumber.trim()) ||
-      Boolean(formData.idFileName);
+    if (!formData.idType) {
+      newErrors.idType = "Please select an ID type.";
+    }
 
-    if (hasStartedId && !formData.isSkippedId) {
-      if (!formData.idType) {
-        newErrors.idType = "Please select an ID type.";
-      }
-      if (!formData.idNumber.trim()) {
-        newErrors.idNumber = "ID number is required.";
-      }
-      if (fileError) {
-        newErrors.fileError = fileError;
-      }
+    if (!formData.idNumber.trim()) {
+      newErrors.idNumber = "ID number is required.";
+    }
+
+    if (!formData.idFileName) {
+      newErrors.idFile =
+        "Government ID is required. Please upload a valid government-issued ID to continue.";
+    } else if (fileError) {
+      newErrors.fileError = fileError;
     }
 
     setErrors(newErrors);
@@ -282,6 +260,12 @@ export default function RegisterPage() {
         setFileError("");
         updateField("idFileName", file.name);
         updateField("isSkippedId", false);
+        setErrors((prev) => {
+          const next = { ...prev };
+          delete next.idFile;
+          delete next.fileError;
+          return next;
+        });
       }
     }
   };
@@ -289,16 +273,6 @@ export default function RegisterPage() {
   const handleRemoveFile = () => {
     updateField("idFileName", "");
     setFileError("");
-  };
-
-  const handleSkipId = () => {
-    setErrors({});
-    setFileError("");
-    updateField("isSkippedId", true);
-    updateField("idType", "");
-    updateField("idNumber", "");
-    updateField("idFileName", "");
-    setCurrentStep(4);
   };
 
   // Step advancement with validation gate
@@ -353,7 +327,11 @@ export default function RegisterPage() {
       const newApp: VendorApplication = {
         id: newAppNumber,
         applicationNumber: newAppNumber,
+        vendorId: "",
         status: "submitted",
+        verificationStatus: "Pending",
+        isVerified: false,
+        currentStage: 1,
         business: {
           businessName: formData.businessName.trim(),
           businessDescription: formData.businessDescription.trim() || undefined,
@@ -407,6 +385,94 @@ export default function RegisterPage() {
 
       createApplication(newApp);
 
+      if (typeof window !== "undefined") {
+        localStorage.setItem("bvr_current_vendor_app_number", newAppNumber);
+      }
+
+      setVendorSession({
+        email: formData.emailAddress.trim(),
+        name: formData.ownerName.trim(),
+        role: "Local Vendor",
+      });
+
+      try {
+        saveSharedApplication({
+          id: newAppNumber,
+          applicationNumber: newAppNumber,
+          vendorId: "",
+          vendor: {
+            id: "",
+            name: formData.ownerName.trim(),
+            businessName: formData.businessName.trim(),
+            email: formData.emailAddress.trim(),
+            phone: formData.contactNumber.trim(),
+          },
+          business: {
+            name: formData.businessName.trim(),
+            businessName: formData.businessName.trim(),
+            category: "Food & Beverage / Market Stall",
+            address: `${formData.houseNo.trim()} ${formData.street.trim()}, ${formData.barangay}, Butuan City`,
+            barangay: formData.barangay,
+            description: formData.businessDescription.trim() || undefined,
+            houseNumber: formData.houseNo.trim(),
+            street: formData.street.trim(),
+            city: "Butuan City",
+            province: "Agusan del Norte",
+            region: "Caraga",
+            country: "Philippines",
+          },
+          status: "submitted",
+          adminStatus: "Submitted",
+          verificationStatus: "Pending",
+          isVerified: false,
+          currentStage: 1,
+          submittedAt: now,
+          submittedDate: new Date().toLocaleDateString("en-US", {
+            month: "long",
+            day: "numeric",
+            year: "numeric",
+          }),
+          updatedAt: now,
+          lastUpdatedText: "Submitted just now",
+          documents: newApp.documents.map((d) => ({
+            id: d.id || `doc-${Date.now()}`,
+            filename: d.filename || d.idFileName || "government-id.pdf",
+            idType: d.idType || "Philippine National ID",
+            uploadedAt: d.uploadedAt || now,
+            status: "Submitted",
+            submitted: true,
+          })),
+          adminRemarks: "",
+          administratorRemarks: "",
+          correctionItems: [],
+          correctionFields: [],
+          correctionDate: null,
+          activity: [
+            {
+              id: `act-${Date.now()}`,
+              title: "Application Submitted",
+              description: "Vendor registration application was successfully submitted.",
+              date: "Today • Just now",
+              dotColor: "blue",
+              type: "submission",
+            },
+          ],
+          businessName: formData.businessName.trim(),
+          ownerName: formData.ownerName.trim(),
+          contactNumber: formData.contactNumber.trim(),
+          email: formData.emailAddress.trim(),
+          barangay: formData.barangay,
+          houseNumber: formData.houseNo.trim(),
+          street: formData.street.trim(),
+          city: "Butuan City",
+          province: "Agusan del Norte",
+          region: "Caraga",
+          country: "Philippines",
+        });
+      } catch (syncErr) {
+        console.error("Failed to sync shared application state:", syncErr);
+      }
+
       // Workflow notification to Admin
       addAdminNotification({
         type: "new-application",
@@ -433,8 +499,8 @@ export default function RegisterPage() {
         vendorName: formData.businessName.trim(),
         status: "Submitted",
         actionLabel: "View Application",
-        actionUrl: "/dashboard/my-application",
-        href: "/dashboard/my-application",
+        actionUrl: `/application-status?appNumber=${newAppNumber}`,
+        href: `/application-status?appNumber=${newAppNumber}`,
         priority: "normal",
       });
 
@@ -487,16 +553,6 @@ export default function RegisterPage() {
           </Link>
 
           <div className="flex items-center gap-2 sm:gap-3">
-            <button
-              type="button"
-              onClick={handleFillDemo}
-              className="inline-flex items-center gap-1.5 text-xs text-blue-700 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer"
-              title="Pre-fill form with sample Butuan vendor details for testing"
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Fill Demo Data</span>
-              <span className="sm:hidden">Demo</span>
-            </button>
 
             <Link
               href="/"
@@ -998,7 +1054,7 @@ export default function RegisterPage() {
               </div>
             )}
 
-            {/* STEP 3: Verification (Optional) */}
+            {/* STEP 3: Verification (Required) */}
             {currentStep === 3 && (
               <div className="p-6 sm:p-8 space-y-6">
                 <div>
@@ -1006,23 +1062,24 @@ export default function RegisterPage() {
                     <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-800 text-xs font-semibold uppercase tracking-wider">
                       Step 3 of 5
                     </span>
-                    <Badge className="bg-amber-100 text-amber-900 border-amber-300 font-bold text-xs">
-                      Optional
+                    <Badge variant="outline" className="border-blue-200 text-blue-800 bg-blue-50/60 font-semibold text-xs">
+                      Required
                     </Badge>
                   </div>
                   <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
                     Identity Verification
                   </h2>
                   <p className="text-sm sm:text-base text-slate-600 mt-1">
-                    Providing a government-issued ID is optional. It may help administrators verify your registration.
+                    Upload one valid government-issued ID for identity verification. Accepted IDs include PhilSys National ID, Driver&apos;s License, Voter&apos;s ID, or Postal ID and passport.
                   </p>
                 </div>
 
                 <div className="space-y-5 pt-2">
                   {/* Government ID Type */}
                   <div className="space-y-1.5">
-                    <label className="text-sm font-semibold text-slate-800">
-                      Government ID Type
+                    <label className="text-sm font-semibold text-slate-800 flex items-center gap-1">
+                      <span>Government ID Type</span>
+                      <span className="text-rose-500">*</span>
                     </label>
                     <Select
                       value={formData.idType}
@@ -1040,7 +1097,7 @@ export default function RegisterPage() {
                             "border-rose-400 focus-visible:ring-rose-400/40 bg-rose-50/20"
                         )}
                       >
-                        <SelectValue placeholder="Select ID Type (Optional)" />
+                        <SelectValue placeholder="Select ID Type" />
                       </SelectTrigger>
                       <SelectContent>
                         {ID_TYPES.map((id) => (
@@ -1062,9 +1119,10 @@ export default function RegisterPage() {
                   <div className="space-y-1.5">
                     <label
                       htmlFor="idNumber"
-                      className="text-sm font-semibold text-slate-800"
+                      className="text-sm font-semibold text-slate-800 flex items-center gap-1"
                     >
-                      Government ID Number
+                      <span>Government ID Number</span>
+                      <span className="text-rose-500">*</span>
                     </label>
                     <Input
                       id="idNumber"
@@ -1090,15 +1148,21 @@ export default function RegisterPage() {
 
                   {/* Upload Government ID Area */}
                   <div className="space-y-2">
-                    <label className="text-sm font-semibold text-slate-800 block">
-                      Upload Government ID
-                    </label>
+                    <div className="space-y-1">
+                      <label className="text-sm font-semibold text-slate-800 flex items-center gap-1">
+                        <span>Government ID</span>
+                        <span className="text-rose-500">*</span>
+                      </label>
+                      <p className="text-xs text-slate-600">
+                        Upload one valid government-issued ID for identity verification. Accepted IDs include PhilSys National ID, Driver&apos;s License, Voter&apos;s ID, or Postal ID and passport.
+                      </p>
+                    </div>
 
                     <div
                       className={cn(
                         "relative border-2 border-dashed rounded-2xl p-6 text-center transition-all",
-                        fileError
-                          ? "border-rose-300 bg-rose-50/20"
+                        errors.idFile || fileError
+                          ? "border-rose-400 bg-rose-50/20"
                           : "border-slate-300 hover:border-blue-400 bg-slate-50/60 hover:bg-blue-50/20"
                       )}
                     >
@@ -1114,7 +1178,7 @@ export default function RegisterPage() {
                         <div
                           className={cn(
                             "w-12 h-12 rounded-full flex items-center justify-center",
-                            fileError ? "bg-rose-100 text-rose-700" : "bg-blue-100 text-blue-700"
+                            errors.idFile || fileError ? "bg-rose-100 text-rose-700" : "bg-blue-100 text-blue-700"
                           )}
                         >
                           <UploadCloud className="w-6 h-6" />
@@ -1135,8 +1199,16 @@ export default function RegisterPage() {
                       </div>
                     </div>
 
+                    {/* Government ID required error */}
+                    {errors.idFile && (
+                      <p className="text-xs font-medium text-rose-500 flex items-center gap-1 pt-1">
+                        <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                        <span>{errors.idFile}</span>
+                      </p>
+                    )}
+
                     {/* File validation error feedback */}
-                    {fileError && (
+                    {fileError && !errors.idFile && (
                       <p className="text-xs font-medium text-rose-500 flex items-center gap-1 pt-1">
                         <AlertCircle className="w-3.5 h-3.5 shrink-0" />
                         <span>{fileError}</span>
@@ -1183,19 +1255,9 @@ export default function RegisterPage() {
                   <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
                     <Button
                       type="button"
-                      variant="ghost"
-                      onClick={handleSkipId}
-                      size="lg"
-                      className="font-medium text-slate-600 hover:text-slate-900 cursor-pointer"
-                    >
-                      Skip for now
-                    </Button>
-
-                    <Button
-                      type="button"
                       onClick={handleContinue}
                       size="lg"
-                      className="font-semibold px-6 py-2.5 gap-2 cursor-pointer shadow-xs"
+                      className="font-semibold px-6 py-2.5 gap-2 cursor-pointer shadow-xs w-full sm:w-auto"
                     >
                       Continue
                       <ArrowRight className="w-4 h-4 ml-1" />
@@ -1648,8 +1710,8 @@ export default function RegisterPage() {
                               </span>
                             </div>
                           ) : (
-                            <Badge variant="outline" className="text-slate-500 border-slate-300">
-                              Not provided (Optional)
+                            <Badge variant="outline" className="text-rose-600 border-rose-300 bg-rose-50">
+                              Missing (Required)
                             </Badge>
                           )}
                         </div>

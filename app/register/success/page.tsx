@@ -19,15 +19,17 @@ import { cn } from "@/lib/utils";
 import { getApplications } from "@/lib/application-store";
 
 function getClientAppNumber(): string {
-  if (typeof window === "undefined") return "BVR-2026-001248";
+  if (typeof window === "undefined") return "";
   const params = new URLSearchParams(window.location.search);
   const queryAppNum = params.get("appNumber");
   if (queryAppNum) return queryAppNum;
+  const current = localStorage.getItem("bvr_current_vendor_app_number");
+  if (current) return current;
   const stored = getApplications();
   if (stored.length > 0) {
-    return stored[stored.length - 1].applicationNumber;
+    return stored[0].applicationNumber || stored[0].id;
   }
-  return "BVR-2026-001248";
+  return "";
 }
 
 export default function RegisterSuccessPage() {
@@ -35,7 +37,7 @@ export default function RegisterSuccessPage() {
   const applicationNumber = useSyncExternalStore(
     () => () => {},
     getClientAppNumber,
-    () => "BVR-2026-001248"
+    () => ""
   );
 
   const handleCopy = () => {
@@ -172,7 +174,7 @@ export default function RegisterSuccessPage() {
               {/* Primary & Secondary Action Buttons */}
               <div className="pt-2 flex flex-col sm:flex-row items-center gap-3">
                 <Link
-                  href="/application-status"
+                  href={applicationNumber ? `/application-status?appNumber=${applicationNumber}` : "/application-status"}
                   className={cn(
                     buttonVariants({ variant: "default", size: "lg" }),
                     "w-full sm:flex-1 font-semibold justify-center shadow-xs gap-2 py-3 cursor-pointer"

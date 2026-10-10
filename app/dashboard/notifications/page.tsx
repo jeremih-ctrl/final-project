@@ -13,13 +13,12 @@ import {
   AlertTriangle,
   XCircle,
   FileText,
-  RotateCcw,
   MailCheck,
   ArrowRight,
   ShieldCheck,
-  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useSharedApplication } from "@/lib/vendor-application-state";
 import {
   VendorNotification,
   useVendorNotifications,
@@ -28,6 +27,7 @@ import {
 
 export default function VendorNotificationsPage() {
   const router = useRouter();
+  const { application } = useSharedApplication();
   const [, setTick] = useState(0);
 
   // Periodically trigger a re-render to naturally update relative times every 30s
@@ -38,14 +38,13 @@ export default function VendorNotificationsPage() {
     return () => clearInterval(timer);
   }, []);
 
+  const appId = application?.applicationNumber || application?.id || "BVR-2026-001248";
   const {
     notifications,
     unreadCount,
     markAsRead,
     markAllAsRead,
-    reset,
-    addNotification,
-  } = useVendorNotifications("BVR-2026-001248");
+  } = useVendorNotifications(appId);
 
   const [filter, setFilter] = useState<"all" | "unread" | "read">("all");
 
@@ -222,7 +221,7 @@ export default function VendorNotificationsPage() {
             <div className="space-y-1">
               <h3 className="text-base font-bold text-slate-900">You&apos;re all caught up</h3>
               <p className="text-xs sm:text-sm text-slate-500 max-w-sm mx-auto">
-                There are no new notifications at this time.
+                No notifications are available.
               </p>
             </div>
             {filter !== "all" && (
@@ -396,166 +395,6 @@ export default function VendorNotificationsPage() {
           })
         )}
       </div>
-
-      {/* Subtle Development Simulation Area */}
-      <details className="mt-10 border-t border-slate-200 pt-4 text-xs text-slate-500 group">
-        <summary className="cursor-pointer font-semibold text-slate-600 hover:text-slate-900 select-none flex items-center justify-between p-2 rounded-lg hover:bg-slate-100">
-          <div className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-slate-500" />
-            <span>Developer Simulation Controls (Testing only)</span>
-          </div>
-          <span className="text-[11px] text-slate-400">Click to expand</span>
-        </summary>
-        <div className="p-4 mt-2 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <p className="text-slate-600">
-              Trigger simulated application events to test vendor alerts:
-            </p>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={reset}
-              className="text-xs cursor-pointer gap-1.5"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              Reset Notification Store
-            </Button>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() =>
-                addNotification({
-                  type: "correction-requested",
-                  title: "Action Required: Application Correction",
-                  message:
-                    "Your vendor registration application requires corrections before it can be approved.",
-                  fullMessage:
-                    "Please provide a clearer business address and replace the submitted government ID image with a readable copy.",
-                  remarks:
-                    "Please provide a clearer business address and replace the submitted government ID image with a readable copy.",
-                  applicationNumber: "BVR-2026-001248",
-                  vendorName: "Juan's Food Stall",
-                  status: "Needs Correction",
-                  actionLabel: "Review Application",
-                  actionUrl: "/dashboard/my-application/correction",
-                  href: "/dashboard/my-application/correction",
-                  priority: "high",
-                })
-              }
-              className="text-xs cursor-pointer bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100"
-            >
-              + Correction Required
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() =>
-                addNotification({
-                  type: "application-approved",
-                  title: "Vendor Registration Approved",
-                  message:
-                    "Your vendor registration application has been approved by the City Government of Butuan.",
-                  fullMessage:
-                    "Your vendor registration application BVR-2026-001248 has been approved. Your official Vendor ID BUT-V-001248 has been issued.",
-                  applicationNumber: "BVR-2026-001248",
-                  vendorName: "Juan's Food Stall",
-                  vendorId: "BUT-V-001248",
-                  status: "Approved",
-                  actionLabel: "View Application",
-                  actionUrl: "/dashboard/my-application",
-                  href: "/dashboard/my-application",
-                  priority: "high",
-                })
-              }
-              className="text-xs cursor-pointer bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100"
-            >
-              + Application Approved
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() =>
-                addNotification({
-                  type: "application-rejected",
-                  title: "Vendor Registration Application Rejected",
-                  message:
-                    "Your vendor registration application has been reviewed and rejected.",
-                  fullMessage:
-                    "Your vendor registration application has been reviewed and rejected. Reason: Location violates municipal zoning restrictions.",
-                  remarks: "Location violates municipal zoning restrictions.",
-                  applicationNumber: "BVR-2026-001248",
-                  vendorName: "Juan's Food Stall",
-                  status: "Rejected",
-                  actionLabel: "View Application",
-                  actionUrl: "/dashboard/my-application",
-                  href: "/dashboard/my-application",
-                  priority: "high",
-                })
-              }
-              className="text-xs cursor-pointer bg-rose-50 text-rose-800 border-rose-200 hover:bg-rose-100"
-            >
-              + Application Rejected
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() =>
-                addNotification({
-                  type: "document-verified",
-                  title: "Government ID Verified",
-                  message:
-                    "Your submitted government ID has been reviewed and verified.",
-                  fullMessage:
-                    "The Philippine National ID submitted for application BVR-2026-001248 has been verified by the City Licensing Office.",
-                  applicationNumber: "BVR-2026-001248",
-                  vendorName: "Juan's Food Stall",
-                  status: "Under Review",
-                  actionLabel: "View Application",
-                  actionUrl: "/dashboard/my-application",
-                  href: "/dashboard/my-application",
-                  priority: "normal",
-                })
-              }
-              className="text-xs cursor-pointer bg-blue-50 text-blue-800 border-blue-200 hover:bg-blue-100"
-            >
-              + Government ID Verified
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() =>
-                addNotification({
-                  type: "document-replacement",
-                  title: "Government ID Replacement Required",
-                  message:
-                    "The submitted government ID could not be verified. Please provide a valid replacement document.",
-                  fullMessage:
-                    "The submitted government ID image for application BVR-2026-001248 could not be verified. Please provide a valid replacement document.",
-                  applicationNumber: "BVR-2026-001248",
-                  vendorName: "Juan's Food Stall",
-                  status: "Needs Correction",
-                  actionLabel: "Update Documents",
-                  actionUrl: "/dashboard/my-application/correction",
-                  href: "/dashboard/my-application/correction",
-                  priority: "high",
-                })
-              }
-              className="text-xs cursor-pointer bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100"
-            >
-              + ID Replacement Required
-            </Button>
-          </div>
-        </div>
-      </details>
     </div>
   );
 }

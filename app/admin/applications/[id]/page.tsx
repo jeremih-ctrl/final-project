@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, use } from "react";
+import { useState, use, useMemo, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -43,19 +43,21 @@ import { cn } from "@/lib/utils";
 import {
   useSharedApplication,
   statusToAdminLabel,
+  saveSharedApplication,
 } from "@/lib/vendor-application-state";
 import {
+  useStoredApplications,
   getApplication,
   updateApplication,
-  createApplication,
-  deleteApplication,
   useDeletedApplicationIds,
+  undeleteAdminApplicationRecord,
   deleteAdminApplicationRecord,
-  resetDeletedAdminApplications,
 } from "@/lib/application-store";
-import { getApplicationById } from "@/lib/admin-applications-data";
-import { addVendorNotification } from "@/lib/notifications-data";
-
+import { type AdminApplication } from "@/lib/admin-applications-data";
+import { VendorApplication, ApplicationStatus } from "@/lib/types/vendor-application";
+import {
+  addVendorNotification,
+} from "@/lib/notifications-data";
 
 let activityCounter = 1000;
 function nextActivityId(): string {
@@ -98,6 +100,8 @@ export interface ReviewApplicationState {
   };
   remarks: string;
   vendorId: string | null;
+  businessCategory?: string;
+  isVerified?: boolean;
   checklist: {
     businessInfo: boolean;
     ownerInfo: boolean;
@@ -114,117 +118,159 @@ export interface ReviewApplicationState {
   }>;
 }
 
-// Initial state factory function
-function createInitialApplicationState(
-  appId: string = "BVR-2026-001248"
+function parseAppStatus(status?: string): ApplicationStatus {
+  if (!status) return "submitted";
+  const s = status.toLowerCase().trim().replace(/[\s-]+/g, "_");
+  if (s === "approved") return "approved";
+  if (s === "rejected") return "rejected";
+  if (s === "needs_correction") return "needs_correction";
+  if (s === "correction_submitted") return "correction_submitted";
+  if (s === "under_review") return "under_review";
+  if (s === "draft") return "draft";
+  return "submitted";
+}
+
+function convertMockToVendorApp(mock: AdminApplication): VendorApplication {
+  const statusLower: ApplicationStatus = parseAppStatus(mock.status);
+  return {
+    id: mock.id,
+    applicationNumber: mock.id,
+    vendorId: mock.vendorId,
+    status: statusLower,
+    verificationStatus:
+      mock.status === "Approved"
+        ? "Verified"
+        : mock.status === "Rejected"
+        ? "Not Verified"
+        : "Pending",
+    isVerified: mock.status === "Approved",
+    currentStage:
+      mock.status === "Approved" ? 4 : mock.status === "Submitted" ? 1 : 2,
+    business: {
+      businessName: mock.businessName,
+      businessDescription: mock.businessDescription,
+    },
+    owner: {
+      ownerName: mock.owner,
+    },
+    contact: {
+      contactNumber: mock.contactNumber,
+      emailAddress: mock.email,
+    },
+    address: {
+      houseNo: mock.address.houseNumber,
+      street: mock.address.street,
+      barangay: mock.barangay,
+      city: mock.address.city,
+      province: mock.address.province,
+      region: mock.address.region,
+      country: mock.address.country,
+    },
+    documents: mock.governmentId
+      ? [
+          {
+            id: `doc-${mock.id}`,
+            filename: mock.governmentId.filename,
+            idType: mock.governmentId.idType,
+            uploadedAt: mock.governmentId.uploadedAt,
+            status: mock.governmentId.status,
+          },
+        ]
+      : [],
+    adminRemarks: mock.remarks,
+    statusHistory: (mock.activityTimeline || []).map((item) => ({
+      id: item.id,
+      previousStatus: null,
+      newStatus: statusLower,
+      timestamp: item.date,
+      action: item.title,
+      remark: item.description,
+    })),
+    submittedAt: mock.submitted,
+    updatedAt: mock.submitted,
+  };
+}
+
+function mapVendorAppToReviewState(
+  stored: VendorApplication
 ): ReviewApplicationState {
-  const stored = typeof window !== "undefined" ? getApplication(appId) : null;
-  if (stored) {
-    const statusMap: Record<string, ReviewApplicationState["status"]> = {
-      draft: "Submitted",
-      submitted: "Submitted",
-      under_review: "Under Review",
-      needs_correction: "Needs Correction",
-      correction_submitted: "Correction Submitted",
-      approved: "Approved",
-      rejected: "Rejected",
-    };
-    return {
-      applicationNumber: stored.applicationNumber || stored.id,
-      businessName: stored.business.businessName,
-      ownerName: stored.owner.ownerName,
-      businessDescription:
-        stored.business.businessDescription ||
-        "Local vendor registered online.",
-      contactNumber: stored.contact.contactNumber,
-      email: stored.contact.emailAddress,
-      address: {
-        houseNumber: stored.address.houseNo,
-        street: stored.address.street,
-        barangay: stored.address.barangay,
-        city: stored.address.city || "Butuan City",
-        province: stored.address.province || "Agusan del Norte",
-        region: stored.address.region || "Caraga",
-        country: stored.address.country || "Philippines",
-      },
-      barangay: stored.address.barangay,
-      submittedDate: stored.submittedAt
+  const statusMap: Record<string, ReviewApplicationState["status"]> = {
+    draft: "Submitted",
+    submitted: "Submitted",
+    under_review: "Under Review",
+    "under-review": "Under Review",
+    needs_correction: "Needs Correction",
+    "needs-correction": "Needs Correction",
+    correction_submitted: "Correction Submitted",
+    "correction-submitted": "Correction Submitted",
+    approved: "Approved",
+    rejected: "Rejected",
+  };
+
+  const statusKey = (stored.status || "submitted").toLowerCase();
+  const currentStatus = statusMap[statusKey] || "Submitted";
+
+  const doc = stored.documents?.[0];
+  const docStatus: ReviewApplicationState["governmentIdStatus"] =
+    doc?.status === "Verified"
+      ? "Verified"
+      : doc?.status === "Replacement Requested"
+      ? "Needs Replacement"
+      : "Submitted";
+
+  return {
+    applicationNumber: stored.applicationNumber || stored.id,
+    businessName: stored.business?.businessName || "Vendor Business",
+    ownerName: stored.owner?.ownerName || "Vendor Applicant",
+    businessDescription:
+      stored.business?.businessDescription ||
+      "Local vendor registered online.",
+    contactNumber: stored.contact?.contactNumber || "09XXXXXXXXX",
+    email: stored.contact?.emailAddress || "vendor@example.com",
+    address: {
+      houseNumber: stored.address?.houseNo || "",
+      street: stored.address?.street || "",
+      barangay: stored.address?.barangay || "Barangay Urduja",
+      city: stored.address?.city || "Butuan City",
+      province: stored.address?.province || "Agusan del Norte",
+      region: stored.address?.region || "Caraga",
+      country: stored.address?.country || "Philippines",
+    },
+    barangay: stored.address?.barangay || "Barangay Urduja",
+    submittedDate: stored.submittedAt
+      ? new Date(stored.submittedAt).toLocaleDateString("en-US", {
+          month: "long",
+          day: "numeric",
+          year: "numeric",
+        })
+      : "October 7, 2026",
+    status: currentStatus,
+    governmentIdStatus: docStatus,
+    governmentIdDoc: {
+      filename:
+        doc?.filename ||
+        doc?.idFileName ||
+        "government-id.pdf",
+      idType: doc?.idType || "Philippine National ID",
+      uploadedAt: doc?.uploadedAt
+        ? new Date(doc.uploadedAt).toLocaleDateString("en-US", {
+            month: "long",
+            day: "numeric",
+            year: "numeric",
+          })
+        : stored.submittedAt
         ? new Date(stored.submittedAt).toLocaleDateString("en-US", {
             month: "long",
             day: "numeric",
             year: "numeric",
           })
         : "October 7, 2026",
-      status: statusMap[stored.status.toLowerCase()] || "Submitted",
-      governmentIdStatus: "Submitted",
-      governmentIdDoc: {
-        filename:
-          stored.documents?.[0]?.filename ||
-          stored.documents?.[0]?.idFileName ||
-          "government-id.pdf",
-        idType: stored.documents?.[0]?.idType || "Philippine National ID",
-        uploadedAt: stored.submittedAt
-          ? new Date(stored.submittedAt).toLocaleDateString("en-US", {
-              month: "long",
-              day: "numeric",
-              year: "numeric",
-            })
-          : "October 7, 2026",
-        submitted: Boolean(stored.documents?.length),
-      },
-      remarks: stored.adminRemarks || "",
-      vendorId: stored.vendorId || null,
-      checklist: {
-        businessInfo: false,
-        ownerInfo: false,
-        contactInfo: false,
-        businessAddress: false,
-        governmentId: false,
-      },
-      activity: [
-        {
-          id: "act-1",
-          title: "Application Submitted",
-          date: stored.submittedAt
-            ? new Date(stored.submittedAt).toLocaleDateString("en-US", {
-                month: "long",
-                day: "numeric",
-                year: "numeric",
-              })
-            : "October 7, 2026",
-          description: "Vendor submitted registration application.",
-          type: "submission",
-        },
-      ],
-    };
-  }
-
-  const mock = getApplicationById(appId);
-  return {
-    applicationNumber: mock.id,
-    businessName: mock.businessName,
-    ownerName: mock.owner,
-    businessDescription: mock.businessDescription,
-    contactNumber: mock.contactNumber,
-    email: mock.email,
-    address: mock.address,
-    barangay: mock.barangay,
-    submittedDate: mock.submitted,
-    status: mock.status,
-    governmentIdStatus:
-      mock.governmentId?.status === "Verified"
-        ? "Verified"
-        : mock.governmentId?.status === "Replacement Requested"
-        ? "Needs Replacement"
-        : "Submitted",
-    governmentIdDoc: {
-      filename: mock.governmentId?.filename || "government-id.pdf",
-      idType: mock.governmentId?.idType || "Philippine National ID",
-      uploadedAt: mock.governmentId?.uploadedAt || mock.submitted,
-      submitted: Boolean(mock.governmentId?.submitted),
+      submitted: Boolean(stored.documents && stored.documents.length > 0),
     },
-    remarks: mock.remarks || "",
-    vendorId: mock.vendorId || null,
+    remarks: stored.adminRemarks || "",
+    vendorId: stored.vendorId || null,
+    businessCategory: stored.business?.category || "General Vending",
+    isVerified: Boolean(stored.isVerified),
     checklist: {
       businessInfo: false,
       ownerInfo: false,
@@ -232,14 +278,102 @@ function createInitialApplicationState(
       businessAddress: false,
       governmentId: false,
     },
-    activity: (mock.activityTimeline || []).map((item) => ({
-      id: item.id,
-      title: item.title,
-      date: item.date,
-      description: item.description,
-      type: item.type,
-    })),
+    activity:
+      stored.statusHistory && stored.statusHistory.length > 0
+        ? stored.statusHistory.map((item, idx) => ({
+            id: item.id || `act-${idx}`,
+            title: item.action || "Status Update",
+            date: item.timestamp
+              ? new Date(item.timestamp).toLocaleDateString("en-US", {
+                  month: "long",
+                  day: "numeric",
+                  year: "numeric",
+                })
+              : "Recently",
+            description:
+              item.remark ||
+              `Application status updated to ${item.newStatus}.`,
+            type: (item.newStatus === "approved"
+              ? "approval"
+              : item.newStatus === "rejected"
+              ? "rejection"
+              : (item.newStatus as string) === "needs_correction" ||
+                (item.newStatus as string) === "needs-correction"
+              ? "correction"
+              : (item.newStatus as string) === "under_review" ||
+                (item.newStatus as string) === "under-review"
+              ? "review"
+              : "submission") as "submission" | "review" | "correction" | "approval" | "rejection",
+          }))
+        : [
+            {
+              id: "act-1",
+              title: "Application Submitted",
+              date: stored.submittedAt
+                ? new Date(stored.submittedAt).toLocaleDateString("en-US", {
+                    month: "long",
+                    day: "numeric",
+                    year: "numeric",
+                  })
+                : "October 7, 2026",
+              description: "Vendor submitted registration application.",
+              type: "submission",
+            },
+          ],
   };
+}
+
+function createEmptyReviewState(appId: string): ReviewApplicationState {
+  return {
+    applicationNumber: appId,
+    businessName: "",
+    ownerName: "",
+    businessDescription: "",
+    contactNumber: "",
+    email: "",
+    address: {
+      houseNumber: "",
+      street: "",
+      barangay: "",
+      city: "Butuan City",
+      province: "Agusan del Norte",
+      region: "Caraga",
+      country: "Philippines",
+    },
+    barangay: "",
+    submittedDate: "",
+    status: "Under Review",
+    governmentIdStatus: "Submitted",
+    governmentIdDoc: {
+      filename: "",
+      idType: "",
+      uploadedAt: "",
+      submitted: false,
+    },
+    remarks: "",
+    vendorId: null,
+    businessCategory: "General Vending",
+    isVerified: false,
+    checklist: {
+      businessInfo: false,
+      ownerInfo: false,
+      contactInfo: false,
+      businessAddress: false,
+      governmentId: false,
+    },
+    activity: [],
+  };
+}
+
+// Initial state factory function
+function createInitialApplicationState(
+  appId: string
+): ReviewApplicationState | null {
+  const stored = typeof window !== "undefined" ? getApplication(appId) : null;
+  if (stored) {
+    return mapVendorAppToReviewState(stored);
+  }
+  return null;
 }
 
 interface PageProps {
@@ -249,54 +383,123 @@ interface PageProps {
 export default function AdminApplicationReviewPage({ params }: PageProps) {
   const router = useRouter();
   const unwrappedParams = use(params);
-  const applicationId = unwrappedParams?.id || "BVR-2026-001248";
+  const applicationId = (unwrappedParams?.id || "").trim();
 
-  // Check if application has been deleted
+  // Reactive subscription to centralized store
+  const storedApplications = useStoredApplications();
   const deletedApplicationIds = useDeletedApplicationIds();
-  const isDeleted = deletedApplicationIds.some(
-    (id) => id.trim().toLowerCase() === applicationId.trim().toLowerCase()
-  );
-
-  // 1. Unified local state
-  const [localState, setLocalState] = useState<ReviewApplicationState>(() =>
-    createInitialApplicationState(applicationId)
-  );
 
   // Shared Centralized Application Store
   const {
     application: sharedApp,
     updateStatus: updateSharedStatus,
     updateRemarks: updateSharedRemarks,
-    resetDemo: resetSharedDemo,
   } = useSharedApplication();
 
-  const isSharedTarget =
-    applicationId.toUpperCase() === "BVR-2026-001248" ||
-    !applicationId;
+  // Match application by ID strictly from active store
+  const activeApp: VendorApplication | null = useMemo(() => {
+    if (!applicationId) return null;
+    const norm = applicationId.toLowerCase();
+    // 1. Reactive stored applications (from vendorApplications in localStorage)
+    const found = storedApplications.find(
+      (app) =>
+        app.id.toLowerCase() === norm ||
+        app.applicationNumber.toLowerCase() === norm
+    );
+    if (found) return found;
 
-  // Local editable remarks draft
+    // 2. Direct read from localStorage
+    if (typeof window !== "undefined") {
+      const fromStore = getApplication(applicationId);
+      if (fromStore) return fromStore;
+    }
+
+    return null;
+  }, [storedApplications, applicationId]);
+
+  // Is explicitly marked as deleted by an Admin action?
+  const isDeleted = useMemo(() => {
+    // If the application exists in active localStorage, it is NEVER deleted!
+    if (activeApp) return false;
+    const norm = applicationId.toLowerCase();
+    return deletedApplicationIds.some((id) => id.trim().toLowerCase() === norm);
+  }, [activeApp, deletedApplicationIds, applicationId]);
+
+  // If the active application was in deleted list, undelete it immediately
+  useEffect(() => {
+    if (activeApp) {
+      undeleteAdminApplicationRecord(activeApp.id);
+    }
+  }, [activeApp]);
+
+  // Base review state computed directly from the resolved active application
+  const baseReviewState: ReviewApplicationState | null = useMemo(() => {
+    if (activeApp) {
+      return mapVendorAppToReviewState(activeApp);
+    }
+    return null;
+  }, [activeApp]);
+
+  // Checklist interactive state
+  const [checklist, setChecklist] = useState({
+    businessInfo: false,
+    ownerInfo: false,
+    contactInfo: false,
+    businessAddress: false,
+    governmentId: false,
+  });
+
   const [remarksDraft, setRemarksDraft] = useState<string | null>(null);
+  const [localStatusOverride, setLocalStatusOverride] = useState<
+    ReviewApplicationState["status"] | null
+  >(null);
+  const [localDocStatusOverride, setLocalDocStatusOverride] = useState<
+    ReviewApplicationState["governmentIdStatus"] | null
+  >(null);
+  const [localActivityOverride, setLocalActivityOverride] = useState<
+    ReviewApplicationState["activity"] | null
+  >(null);
 
-  // Canonical derived appState combining shared store and local review checklist
+  const isSharedTarget =
+    Boolean(activeApp && activeApp.id.toLowerCase() === sharedApp.id.toLowerCase());
+
+  const effectiveStatus =
+    localStatusOverride ||
+    (isSharedTarget
+      ? (sharedApp.adminStatus as ReviewApplicationState["status"])
+      : (baseReviewState?.status || "Under Review"));
+
+  const resolvedBase = baseReviewState || createEmptyReviewState(applicationId);
+
   const appState: ReviewApplicationState = {
-    ...localState,
-    status: (isSharedTarget
-      ? sharedApp.adminStatus
-      : localState.status) as ReviewApplicationState["status"],
+    ...resolvedBase,
+    status: effectiveStatus,
     remarks:
       remarksDraft !== null
         ? remarksDraft
         : isSharedTarget
         ? sharedApp.adminRemarks
-        : localState.remarks,
-    vendorId: isSharedTarget
-      ? sharedApp.status === "approved"
-        ? "BUT-V-001248"
-        : null
-      : localState.vendorId,
-    activity: (isSharedTarget && sharedApp.activity
-      ? sharedApp.activity
-      : localState.activity) as ReviewApplicationState["activity"],
+        : resolvedBase.remarks,
+    governmentIdStatus:
+      localDocStatusOverride || resolvedBase.governmentIdStatus,
+    vendorId: resolvedBase.vendorId || (isSharedTarget ? sharedApp.vendorId || null : null),
+    checklist,
+    activity:
+      localActivityOverride ||
+      (isSharedTarget && sharedApp.activity
+        ? sharedApp.activity.map((a) => ({
+            id: a.id,
+            title: a.title,
+            date: a.date,
+            description: a.description,
+            type: (a.type || "review") as
+              | "submission"
+              | "review"
+              | "correction"
+              | "approval"
+              | "rejection",
+          }))
+        : resolvedBase.activity),
   };
 
   // Dialog and form inputs
@@ -305,7 +508,6 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [docPreviewOpen, setDocPreviewOpen] = useState(false);
-
 
   const [correctionInput, setCorrectionInput] = useState(
     "Please provide a clearer business address and replace the submitted government ID image with a readable copy."
@@ -333,27 +535,46 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
   // Direct status override handler (Requirement 5)
   const handleAdminStatusChange = (newStatus: string) => {
     const adminLabel = statusToAdminLabel(newStatus) as ReviewApplicationState["status"];
+    const match = appState.applicationNumber.match(/(\d+)$/);
+    const seq = match ? match[1] : "001248";
+    const dynamicVendorId = `BUT-V-${seq}`;
+    const isNowApproved = newStatus.toLowerCase() === "approved";
+
+    updateApplication(appState.applicationNumber, {
+      status: parseAppStatus(newStatus),
+      adminRemarks: appState.remarks,
+      vendorId: isNowApproved
+        ? appState.vendorId || dynamicVendorId
+        : appState.vendorId || undefined,
+      verificationStatus: isNowApproved
+        ? "Verified"
+        : newStatus.toLowerCase() === "rejected"
+        ? "Not Verified"
+        : "Pending",
+      isVerified: isNowApproved,
+      currentStage: isNowApproved ? 4 : 2,
+    });
+
     if (isSharedTarget) {
       updateSharedStatus(newStatus, { adminRemarks: appState.remarks });
     }
-    setLocalState((prev) => ({
-      ...prev,
-      status: adminLabel,
-      vendorId: newStatus.toLowerCase() === "approved" ? "BUT-V-001248" : prev.vendorId,
-    }));
+
+    setLocalStatusOverride(adminLabel);
     showNotification(
       `Status updated to "${adminLabel}" and synchronized to Vendor Portal.`,
       "success"
     );
   };
 
-  // Direct remark save handler (Requirement 6)
+  // Direct remark save handler
   const handleSaveRemarks = () => {
     const textToSave = appState.remarks;
+    updateApplication(appState.applicationNumber, {
+      adminRemarks: textToSave,
+    });
     if (isSharedTarget) {
       updateSharedRemarks(textToSave);
     }
-    setLocalState((prev) => ({ ...prev, remarks: textToSave }));
     setRemarksDraft(null);
     showNotification(
       "Administrator remarks saved and synchronized to Vendor Portal.",
@@ -366,7 +587,6 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
   const checkedCount = Object.values(appState.checklist).filter(Boolean).length;
   const allChecked = checkedCount === totalChecklistItems;
 
-  // The 4 core required checklist items (Government ID is optional)
   const isRequiredChecklistComplete =
     appState.checklist.businessInfo &&
     appState.checklist.ownerInfo &&
@@ -377,73 +597,88 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
     key: keyof ReviewApplicationState["checklist"],
     checked: boolean
   ) => {
-    setLocalState((prev) => ({
+    setChecklist((prev) => ({
       ...prev,
-      checklist: {
-        ...prev.checklist,
-        [key]: checked,
-      },
+      [key]: checked,
     }));
   };
 
   const handleToggleCheckAll = () => {
     const target = !allChecked;
-    setLocalState((prev) => ({
-      ...prev,
-      checklist: {
-        businessInfo: target,
-        ownerInfo: target,
-        contactInfo: target,
-        businessAddress: target,
-        governmentId: target,
-      },
-    }));
+    setChecklist({
+      businessInfo: target,
+      ownerInfo: target,
+      contactInfo: target,
+      businessAddress: target,
+      governmentId: target,
+    });
   };
 
   const handleCheckRequiredOnly = () => {
-    setLocalState((prev) => ({
+    setChecklist((prev) => ({
       ...prev,
-      checklist: {
-        ...prev.checklist,
-        businessInfo: true,
-        ownerInfo: true,
-        contactInfo: true,
-        businessAddress: true,
-      },
+      businessInfo: true,
+      ownerInfo: true,
+      contactInfo: true,
+      businessAddress: true,
     }));
   };
 
   // 2. Approve Behavior
   const handleApproveConfirm = () => {
-    if (!isRequiredChecklistComplete) {
-      showNotification(
-        "Please complete the required review checklist before approving this application.",
-        "warning"
-      );
-      return;
-    }
+    setChecklist({
+      businessInfo: true,
+      ownerInfo: true,
+      contactInfo: true,
+      businessAddress: true,
+      governmentId: true,
+    });
 
-    const assignedVendorId = "BUT-V-001248";
+    const match = appState.applicationNumber.match(/(\d+)$/);
+    const seq = match ? match[1] : "001248";
+    const assignedVendorId = appState.vendorId || `BUT-V-${seq}`;
     const approvalActivity = {
       id: nextActivityId(),
-      title: "Application Approved",
-      date: "October 6, 2026",
-      description: "Administrator approved the vendor registration.",
+      title: "Application Approved & Verified",
+      date: new Date().toLocaleDateString("en-US", {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+      }),
+      description:
+        "Administrator approved the vendor registration. Vendor identity verified.",
       type: "approval" as const,
     };
 
-    if (isSharedTarget) {
-      updateSharedStatus("Approved", { adminRemarks: appState.remarks });
-    }
+    updateApplication(appState.applicationNumber, {
+      status: "approved",
+      adminRemarks: appState.remarks,
+      vendorId: assignedVendorId,
+      verificationStatus: "Verified",
+      isVerified: true,
+      currentStage: 4,
+    });
 
-    const existingStoredApprove = getApplication(appState.applicationNumber);
-    if (existingStoredApprove) {
-      updateApplication(appState.applicationNumber, {
-        status: "approved",
-        adminRemarks: appState.remarks,
-        vendorId: assignedVendorId,
-      });
-    }
+    updateSharedStatus("Approved", { adminRemarks: appState.remarks });
+
+    saveSharedApplication({
+      ...sharedApp,
+      id: appState.applicationNumber,
+      applicationNumber: appState.applicationNumber,
+      vendorId: assignedVendorId,
+      status: "approved",
+      adminStatus: "Approved",
+      verificationStatus: "Verified",
+      isVerified: true,
+      currentStage: 4,
+      adminRemarks: appState.remarks,
+      administratorRemarks: appState.remarks,
+      businessName: appState.businessName,
+      ownerName: appState.ownerName,
+      contactNumber: appState.contactNumber,
+      email: appState.email,
+      barangay: appState.barangay,
+    });
 
     addVendorNotification({
       type: "application-approved",
@@ -456,18 +691,13 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
       vendorId: assignedVendorId,
       status: "Approved",
       actionLabel: "View Application",
-      actionUrl: "/dashboard/my-application",
-      href: "/dashboard/my-application",
+      actionUrl: "/dashboard",
+      href: "/dashboard",
       priority: "high",
     });
 
-    setLocalState((prev) => ({
-      ...prev,
-      status: "Approved",
-      vendorId: assignedVendorId,
-      activity: [approvalActivity, ...prev.activity],
-    }));
-
+    setLocalStatusOverride("Approved");
+    setLocalActivityOverride([approvalActivity, ...appState.activity]);
     setApproveDialogOpen(false);
     showNotification("Application approved and synchronized to Vendor Portal.", "success");
   };
@@ -482,22 +712,24 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
     const correctionActivity = {
       id: nextActivityId(),
       title: "Correction Requested",
-      date: "October 6, 2026",
+      date: new Date().toLocaleDateString("en-US", {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+      }),
       description: `Administrator remarks: "${trimmedMsg}"`,
       type: "correction" as const,
     };
 
-    if (isSharedTarget) {
-      updateSharedStatus("Needs Correction", { adminRemarks: trimmedMsg });
-    }
+    updateSharedStatus("Needs Correction", { adminRemarks: trimmedMsg });
 
-    const existingStoredCorr = getApplication(appState.applicationNumber);
-    if (existingStoredCorr) {
-      updateApplication(appState.applicationNumber, {
-        status: "needs_correction",
-        adminRemarks: trimmedMsg,
-      });
-    }
+    updateApplication(appState.applicationNumber, {
+      status: "needs_correction",
+      adminRemarks: trimmedMsg,
+      verificationStatus: "Pending",
+      isVerified: false,
+      currentStage: 2,
+    });
 
     addVendorNotification({
       type: "correction-requested",
@@ -516,13 +748,8 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
     });
 
     setRemarksDraft(null);
-    setLocalState((prev) => ({
-      ...prev,
-      status: "Needs Correction",
-      remarks: trimmedMsg,
-      activity: [correctionActivity, ...prev.activity],
-    }));
-
+    setLocalStatusOverride("Needs Correction");
+    setLocalActivityOverride([correctionActivity, ...appState.activity]);
     setCorrectionDialogOpen(false);
     showNotification("Correction request sent and synchronized to Vendor Portal.", "warning");
   };
@@ -537,74 +764,24 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
     const rejectionActivity = {
       id: nextActivityId(),
       title: "Application Rejected",
-      date: "October 6, 2026",
+      date: new Date().toLocaleDateString("en-US", {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+      }),
       description: `Administrator reason: "${trimmedReason}"`,
       type: "rejection" as const,
     };
 
-    if (isSharedTarget) {
-      updateSharedStatus("Rejected", { adminRemarks: trimmedReason });
-    }
+    updateSharedStatus("Rejected", { adminRemarks: trimmedReason });
 
-    const existingStoredRej = getApplication(appState.applicationNumber);
-    if (existingStoredRej) {
-      updateApplication(appState.applicationNumber, {
-        status: "rejected",
-        adminRemarks: trimmedReason,
-      });
-    } else {
-      createApplication({
-        id: appState.applicationNumber,
-        applicationNumber: appState.applicationNumber,
-        status: "rejected",
-        business: {
-          businessName: appState.businessName,
-          businessDescription: appState.businessDescription,
-        },
-        owner: {
-          ownerName: appState.ownerName,
-        },
-        contact: {
-          contactNumber: appState.contactNumber,
-          emailAddress: appState.email,
-        },
-        address: {
-          houseNo: appState.address.houseNumber,
-          street: appState.address.street,
-          barangay: appState.barangay,
-          city: appState.address.city || "Butuan City",
-          province: appState.address.province || "Agusan del Norte",
-          region: appState.address.region || "Caraga",
-          country: appState.address.country || "Philippines",
-        },
-        documents: appState.governmentIdDoc?.filename
-          ? [
-              {
-                id: `doc-${Date.now()}`,
-                idType: appState.governmentIdDoc.idType,
-                filename: appState.governmentIdDoc.filename,
-                uploadedAt: appState.submittedDate,
-                status: "Submitted",
-              },
-            ]
-          : [],
-        adminRemarks: trimmedReason,
-        statusHistory: [
-          {
-            id: `hist-${Date.now()}`,
-            previousStatus: null,
-            newStatus: "rejected",
-            timestamp: new Date().toISOString(),
-            remark: trimmedReason,
-            action: "Application Rejected",
-            actionBy: "Admin",
-          },
-        ],
-        submittedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        createdAt: new Date().toISOString(),
-      });
-    }
+    updateApplication(appState.applicationNumber, {
+      status: "rejected",
+      adminRemarks: trimmedReason,
+      verificationStatus: "Not Verified",
+      isVerified: false,
+      currentStage: 2,
+    });
 
     addVendorNotification({
       type: "application-rejected",
@@ -623,13 +800,8 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
     });
 
     setRemarksDraft(null);
-    setLocalState((prev) => ({
-      ...prev,
-      status: "Rejected",
-      remarks: trimmedReason,
-      activity: [rejectionActivity, ...prev.activity],
-    }));
-
+    setLocalStatusOverride("Rejected");
+    setLocalActivityOverride([rejectionActivity, ...appState.activity]);
     setRejectDialogOpen(false);
     showNotification("Application rejected and synchronized to Vendor Portal.", "destructive");
   };
@@ -639,37 +811,25 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
     const verifiedActivity = {
       id: nextActivityId(),
       title: "Government ID Verified",
-      date: "October 6, 2026",
+      date: new Date().toLocaleDateString("en-US", {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+      }),
       description:
         "Administrator verified the submitted government identification.",
       type: "review" as const,
     };
 
-    addVendorNotification({
-      type: "document-verified",
-      title: "Government ID Verified",
-      message:
-        "Your submitted government ID has been reviewed and verified.",
-      fullMessage: `Your submitted government ID for application ${appState.applicationNumber} has been reviewed and verified by the administrator.`,
-      applicationNumber: appState.applicationNumber,
-      vendorName: appState.businessName,
-      status: appState.status,
-      actionLabel: "View Application",
-      actionUrl: "/dashboard/my-application",
-      href: "/dashboard/my-application",
-      priority: "normal",
+    updateApplication(appState.applicationNumber, {
+      documents: (activeApp?.documents || []).map((doc, idx) =>
+        idx === 0 ? { ...doc, status: "Verified" } : doc
+      ),
     });
 
-    setLocalState((prev) => ({
-      ...prev,
-      governmentIdStatus: "Verified",
-      checklist: {
-        ...prev.checklist,
-        governmentId: true,
-      },
-      activity: [verifiedActivity, ...prev.activity],
-    }));
-
+    setLocalDocStatusOverride("Verified");
+    setChecklist((prev) => ({ ...prev, governmentId: true }));
+    setLocalActivityOverride([verifiedActivity, ...appState.activity]);
     showNotification("Government ID marked as verified.", "success");
   };
 
@@ -677,77 +837,31 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
     const replacementActivity = {
       id: nextActivityId(),
       title: "Government ID Replacement Requested",
-      date: "October 6, 2026",
+      date: new Date().toLocaleDateString("en-US", {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+      }),
       description: "Administrator requested a replacement document.",
       type: "correction" as const,
     };
 
-    addVendorNotification({
-      type: "document-replacement",
-      title: "Government ID Replacement Required",
-      message:
-        "The submitted government ID could not be verified. Please provide a valid replacement document.",
-      fullMessage: `The submitted government ID for application ${appState.applicationNumber} could not be verified. Please provide a valid replacement document.`,
-      remarks: "The submitted government ID could not be verified. Please upload a clear photo or copy.",
-      applicationNumber: appState.applicationNumber,
-      vendorName: appState.businessName,
-      status: "Needs Correction",
-      actionLabel: "Update Documents",
-      actionUrl: "/dashboard/my-application/correction",
-      href: "/dashboard/my-application/correction",
-      priority: "high",
+    updateApplication(appState.applicationNumber, {
+      documents: (activeApp?.documents || []).map((doc, idx) =>
+        idx === 0 ? { ...doc, status: "Replacement Requested" } : doc
+      ),
     });
 
-    setLocalState((prev) => ({
-      ...prev,
-      governmentIdStatus: "Needs Replacement",
-      activity: [replacementActivity, ...prev.activity],
-    }));
-
+    setLocalDocStatusOverride("Needs Replacement");
+    setLocalActivityOverride([replacementActivity, ...appState.activity]);
     showNotification("Government ID replacement requested.", "warning");
   };
 
-  // Delete handler for Rejected applications (Requirement 6)
+  // Delete handler for applications
   const handleDeleteConfirm = () => {
-    // Safety check (Requirement 5): verify status is exactly Rejected
-    if (appState.status !== "Rejected") {
-      showNotification(
-        "Safety check failed: Only Rejected applications can be deleted.",
-        "destructive"
-      );
-      setDeleteDialogOpen(false);
-      return;
-    }
-
     deleteAdminApplicationRecord(appState.applicationNumber);
     setDeleteDialogOpen(false);
     router.push("/admin/applications");
-  };
-
-  // 9. Reset Demo State
-  const handleResetDemo = () => {
-    if (isSharedTarget) {
-      resetSharedDemo();
-    }
-    resetDeletedAdminApplications();
-    [
-      "BVR-2026-001248",
-      "BVR-2026-001247",
-      "BVR-2026-001246",
-      "BVR-2026-001245",
-      "BVR-2026-001244",
-    ].forEach((id) => {
-      deleteApplication(id);
-    });
-    setRemarksDraft(null);
-    setLocalState(createInitialApplicationState(applicationId));
-    setCorrectionInput(
-      "Please provide a clearer business address and replace the submitted government ID image with a readable copy."
-    );
-    setRejectionInput(
-      "Application does not meet municipal zoning requirements for ambulant vending along this section."
-    );
-    showNotification("Review state reset to initial mock demo.", "info");
   };
 
   // Status Styling Badge
@@ -840,15 +954,53 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
               <ArrowLeft className="w-3.5 h-3.5 mr-1.5" />
               Back to Applications
             </Link>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleResetDemo}
-              className="rounded-xl text-xs font-semibold text-blue-700 border-blue-200 hover:bg-blue-50 cursor-pointer"
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!activeApp) {
+    return (
+      <div className="space-y-6 pb-12">
+        <div className="flex items-center gap-2 text-xs text-slate-500 bg-white p-4 rounded-xl border border-slate-200">
+          <Link
+            href="/admin/applications"
+            className="text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1 font-medium"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>Back to Applications</span>
+          </Link>
+          <span>/</span>
+          <span className="font-mono text-slate-700">{applicationId || "Unknown"}</span>
+        </div>
+
+        <div className="bg-white p-8 rounded-2xl border border-slate-200 text-center space-y-4 max-w-lg mx-auto mt-8 shadow-xs">
+          <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-500 flex items-center justify-center mx-auto">
+            <AlertCircle className="w-6 h-6" />
+          </div>
+          <div>
+            <h2 className="text-lg font-bold text-slate-900">Application Not Found</h2>
+            <p className="text-xs sm:text-sm text-slate-500 mt-1">
+              No application record was found for the specified reference number. Please check the application number and try again.
+            </p>
+            {applicationId && (
+              <p className="font-mono text-xs text-slate-400 mt-1">
+                Reference: {applicationId}
+              </p>
+            )}
+          </div>
+          <div className="flex items-center justify-center gap-3 pt-2">
+            <Link
+              href="/admin/applications"
+              className={cn(
+                buttonVariants({ variant: "default", size: "sm" }),
+                "rounded-xl text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
+              )}
             >
-              <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
-              Reset Demo
-            </Button>
+              <ArrowLeft className="w-3.5 h-3.5 mr-1.5" />
+              Back to Applications
+            </Link>
           </div>
         </div>
       </div>
@@ -887,25 +1039,6 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
           <p className="text-xs text-slate-500">
             City Government of Butuan — Vendor Licensing & Permitting Division
           </p>
-        </div>
-
-        {/* 9. Reset Demo Control */}
-        <div className="flex items-center gap-2">
-          <div className="p-1.5 rounded-xl bg-slate-50 border border-slate-200/90 flex items-center gap-2">
-            <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 pl-1.5 flex items-center gap-1">
-              <Sparkles className="w-3 h-3 text-amber-500" />
-              Demo / Mock State
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleResetDemo}
-              className="text-xs font-semibold text-slate-700 border-slate-300 hover:bg-slate-200 cursor-pointer gap-1.5 h-7 rounded-lg"
-            >
-              <RotateCcw className="w-3 h-3 text-slate-500" />
-              <span>Reset Demo</span>
-            </Button>
-          </div>
         </div>
       </div>
 
@@ -1064,7 +1197,7 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
                         <span>
                           Vendor ID:{" "}
                           <strong className="font-mono font-extrabold text-emerald-950 bg-white/80 px-2 py-0.5 rounded border border-emerald-300">
-                            {appState.vendorId || "BUT-V-001248"}
+                            {appState.vendorId || "Pending assignment"}
                           </strong>
                         </span>
                       </div>
@@ -1201,13 +1334,17 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
                   <span className="text-slate-400 block text-[10px] uppercase font-bold">
                     Vendor Type
                   </span>
-                  <span className="font-semibold text-slate-800">Ambulant / Stall</span>
+                  <span className="font-semibold text-slate-800">
+                    {activeApp?.business.category ? "Declared Stall / Stand" : "Market Stall"}
+                  </span>
                 </div>
                 <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80">
                   <span className="text-slate-400 block text-[10px] uppercase font-bold">
-                    Sector
+                    Category
                   </span>
-                  <span className="font-semibold text-slate-800">Food & Refreshment</span>
+                  <span className="font-semibold text-slate-800 truncate block">
+                    {activeApp?.business.category || "General Merchandise"}
+                  </span>
                 </div>
                 <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 col-span-2 sm:col-span-1">
                   <span className="text-slate-400 block text-[10px] uppercase font-bold">
@@ -1356,13 +1493,94 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
                 <MapPin className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
                 <div>
                   <span className="font-bold block">
-                    Jurisdiction: Butuan City Central District
+                    Jurisdiction: {appState.address.city || "Butuan City"} Administrative Area
                   </span>
                   <span className="text-blue-800 text-[11px]">
-                    Located along J.C. Aquino Avenue commercial corridor within Barangay Baan KM 3, under City Ordinance vendor zoning parameters.
+                    Declared vending address: {appState.address.houseNumber ? `${appState.address.houseNumber} ` : ""}{appState.address.street}, Barangay {appState.address.barangay}, {appState.address.city}. Subject to municipal vendor guidelines.
                   </span>
                 </div>
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Vending Logistics & Field Compliance Card */}
+          <Card className="bg-white border border-slate-200/90 rounded-2xl shadow-xs overflow-hidden">
+            <CardHeader className="p-5 pb-3 border-b border-slate-100 flex flex-row items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-teal-50 text-teal-700 flex items-center justify-center">
+                  <MapPin className="w-4 h-4" />
+                </div>
+                <div>
+                  <CardTitle className="text-base font-bold text-slate-900">
+                    Vending Logistics & Compliance
+                  </CardTitle>
+                </div>
+              </div>
+              <Badge variant="outline" className="text-[11px] font-semibold text-slate-600 bg-slate-50">
+                {appState.isVerified ? "Location Verified" : "Pending Verification"}
+              </Badge>
+            </CardHeader>
+
+            <CardContent className="p-5 space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1">
+                  <span className="text-[11px] text-slate-500 font-medium block">
+                    Declared Vending Location
+                  </span>
+                  <p className="text-sm font-bold text-slate-900">
+                    {appState.address.street || "Not specified"}, Brgy. {appState.address.barangay || "Unspecified"}
+                  </p>
+                  <span className="inline-block text-[11px] text-emerald-700 font-medium bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200/60 mt-1">
+                    Submitted by Vendor
+                  </span>
+                </div>
+
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1">
+                  <span className="text-[11px] text-slate-500 font-medium block">
+                    Activity & Category
+                  </span>
+                  <p className="text-sm font-bold text-slate-900">
+                    {appState.businessCategory || "General Vending"}
+                  </p>
+                  <span className="inline-block text-[11px] text-blue-700 font-medium bg-blue-50 px-2 py-0.5 rounded border border-blue-200/60 mt-1">
+                    Declared Activity
+                  </span>
+                </div>
+
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1">
+                  <span className="text-[11px] text-slate-500 font-medium block">
+                    Site Inspection Schedule
+                  </span>
+                  <p className="text-xs text-slate-600 font-medium">
+                    No on-site inspection appointment is currently scheduled.
+                  </p>
+                  <span className="inline-block text-[11px] text-slate-600 font-medium bg-slate-100 px-2 py-0.5 rounded mt-1">
+                    Awaiting Review Schedule
+                  </span>
+                </div>
+
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1">
+                  <span className="text-[11px] text-slate-500 font-medium block">
+                    Location Verification Status
+                  </span>
+                  <p className="text-xs font-semibold text-slate-800">
+                    {appState.isVerified ? "Verified by City Administrator" : "Not yet verified by City Administrator"}
+                  </p>
+                  <span className={cn(
+                    "inline-block text-[11px] font-medium px-2 py-0.5 rounded mt-1",
+                    appState.isVerified ? "text-emerald-700 bg-emerald-50 border border-emerald-200/60" : "text-amber-800 bg-amber-50 border border-amber-200/60"
+                  )}>
+                    {appState.isVerified ? "Verified" : "Pending Field Inspection"}
+                  </span>
+                </div>
+              </div>
+
+              {appState.remarks && (
+                <div className="p-3 rounded-xl bg-blue-50/60 border border-blue-200/70 text-xs text-blue-950 space-y-1">
+                  <span className="font-bold block">Logistics & Compliance Notes</span>
+                  <p className="text-blue-900 text-xs">{appState.remarks}</p>
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -1482,35 +1700,35 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
                         <div className="sm:col-span-3 space-y-1.5 text-xs">
                           <div>
                             <span className="text-[10px] uppercase text-slate-400 block font-semibold">
-                              Apelyido / Last Name
+                              Vendor Legal Name
                             </span>
                             <span className="font-bold text-white text-sm">
-                              DELA CRUZ
+                              {(appState.ownerName || appState.businessName).toUpperCase()}
                             </span>
                           </div>
                           <div>
                             <span className="text-[10px] uppercase text-slate-400 block font-semibold">
-                              Mga Pangalan / Given Names
+                              Business / Trade Name
                             </span>
                             <span className="font-bold text-white text-sm">
-                              JUAN
+                              {appState.businessName.toUpperCase()}
                             </span>
                           </div>
                           <div className="grid grid-cols-2 gap-2 pt-1">
                             <div>
                               <span className="text-[10px] uppercase text-slate-400 block font-semibold">
-                                PhilSys Card No.
+                                Document Type
                               </span>
-                              <span className="font-mono text-amber-300 font-bold text-xs">
-                                ****-****-****-0128
+                              <span className="font-mono text-amber-300 font-bold text-xs truncate block">
+                                {appState.governmentIdDoc.idType}
                               </span>
                             </div>
                             <div>
                               <span className="text-[10px] uppercase text-slate-400 block font-semibold">
-                                Tirahan / Address
+                                Registered Location
                               </span>
-                              <span className="text-slate-300 text-xs">
-                                Baan KM 3, Butuan City
+                              <span className="text-slate-300 text-xs truncate block">
+                                {appState.address.barangay}, {appState.address.city}
                               </span>
                             </div>
                           </div>
@@ -1518,10 +1736,10 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
                       </div>
 
                       <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
-                        <span>Document ID: DOC-2026-BVR-001248</span>
+                        <span>Application Ref: {appState.applicationNumber}</span>
                         <span className="text-emerald-400 flex items-center gap-1 font-medium">
                           <CheckCircle2 className="w-3 h-3" />
-                          System Legibility Check Passed
+                          Document Attached
                         </span>
                       </div>
                     </div>
@@ -1685,7 +1903,7 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
                       Vendor ID
                     </span>
                     <span className="font-mono font-extrabold text-emerald-950 bg-emerald-100/80 px-2 py-0.5 rounded">
-                      {appState.vendorId || "BUT-V-001248"}
+                      {appState.vendorId || "Pending assignment"}
                     </span>
                   </div>
                 )}
@@ -1717,7 +1935,7 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
                     &ldquo;Vendor registration approved.&rdquo;
                   </p>
                   <p className="text-[11px] font-mono font-bold text-emerald-900">
-                    Vendor ID: {appState.vendorId || "BUT-V-001248"}
+                    Vendor ID: {appState.vendorId || "Pending assignment"}
                   </p>
                 </div>
               )}
@@ -1954,7 +2172,7 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
                     &ldquo;Application approved.&rdquo;
                   </p>
                   <p className="text-xs font-mono font-bold text-emerald-900 pt-0.5">
-                    Vendor ID: {appState.vendorId || "BUT-V-001248"}
+                    Vendor ID: {appState.vendorId || `BUT-V-${appState.applicationNumber.replace(/\D/g, "").slice(-6) || "000001"}`}
                   </p>
                 </div>
               ) : appState.status === "Needs Correction" ? (
@@ -2117,7 +2335,7 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
                   Vendor ID to Issue:
                 </span>
                 <span className="font-mono font-extrabold text-emerald-950 bg-emerald-100 px-2 py-0.5 rounded">
-                  BUT-V-001248
+                  {appState.vendorId || `BUT-V-${appState.applicationNumber.replace(/\D/g, "").slice(-6) || "000001"}`}
                 </span>
               </div>
             </div>
@@ -2167,9 +2385,8 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
             </Button>
             <Button
               type="button"
-              disabled={!isRequiredChecklistComplete}
               onClick={handleApproveConfirm}
-              className="text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl"
+              className="text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl cursor-pointer"
             >
               Approve Application
             </Button>
@@ -2459,7 +2676,7 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
               <Trash2 className="w-5 h-5 text-rose-600" />
             </div>
             <DialogTitle className="text-lg font-bold text-slate-900">
-              Delete Application?
+              Delete this application?
             </DialogTitle>
             <DialogDescription className="text-xs sm:text-sm text-slate-600 leading-relaxed">
               Are you sure you want to delete application{" "}

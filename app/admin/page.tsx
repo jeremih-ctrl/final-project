@@ -37,7 +37,6 @@ import {
   X,
   FileCheck2,
   Bell,
-  RotateCcw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSharedApplication } from "@/lib/vendor-application-state";
@@ -47,9 +46,11 @@ import {
   getApplication,
   updateApplication,
   createApplication,
-  deleteApplication,
-  resetDeletedAdminApplications,
 } from "@/lib/application-store";
+import {
+  useAdminNotifications,
+  formatRelativeTime,
+} from "@/lib/notifications-data";
 
 interface ApplicationRecord {
   id: string;
@@ -62,64 +63,6 @@ interface ApplicationRecord {
   email: string;
   document: string;
 }
-
-const RECENT_APPLICATIONS: ApplicationRecord[] = [
-  {
-    id: "BVR-2026-001248",
-    businessName: "Juan's Food Stall",
-    owner: "Juan Dela Cruz",
-    barangay: "Baan KM 3",
-    submitted: "Oct 6, 2026",
-    status: "Under Review",
-    contact: "09XXXXXXXXX",
-    email: "juan@email.com",
-    document: "government-id.pdf",
-  },
-  {
-    id: "BVR-2026-001247",
-    businessName: "Maria's Sari-Sari Store",
-    owner: "Maria Santos",
-    barangay: "Libertad",
-    submitted: "Oct 6, 2026",
-    status: "Approved",
-    contact: "09181234567",
-    email: "maria.santos@email.com",
-    document: "barangay-clearance.pdf",
-  },
-  {
-    id: "BVR-2026-001246",
-    businessName: "Pedro BBQ",
-    owner: "Pedro Cruz",
-    barangay: "Ampayon",
-    submitted: "Oct 5, 2026",
-    status: "Needs Correction",
-    contact: "09201234567",
-    email: "pedro.bbq@email.com",
-    document: "valid-id-scan.png",
-  },
-  {
-    id: "BVR-2026-001245",
-    businessName: "Agusan River Fresh Fish",
-    owner: "Elena Roxas",
-    barangay: "Doongan",
-    submitted: "Oct 5, 2026",
-    status: "Submitted",
-    contact: "09179876543",
-    email: "elena.roxas@email.com",
-    document: "market-permit.pdf",
-  },
-  {
-    id: "BVR-2026-001244",
-    businessName: "Golden Tara Refreshments",
-    owner: "Roberto Ramos",
-    barangay: "Villa Kananga",
-    submitted: "Oct 4, 2026",
-    status: "Approved",
-    contact: "09192233445",
-    email: "roberto.ramos@email.com",
-    document: "dti-certificate.pdf",
-  },
-];
 
 function formatSubmittedDate(dateStr: string | null | undefined): string {
   if (!dateStr) return "Oct 7, 2026";
@@ -164,10 +107,11 @@ export default function AdminDashboardPage() {
   const {
     application: sharedApp,
     updateStatus,
-    resetDemo: resetSharedDemo,
   } = useSharedApplication();
   const storedApplications = useStoredApplications();
   const deletedApplicationIds = useDeletedApplicationIds();
+  const { notifications: adminNotifs, unreadCount: adminUnreadCount } = useAdminNotifications();
+  const recentNotifications = (adminNotifs || []).slice(0, 5);
   const [selectedApp, setSelectedApp] = useState<ApplicationRecord | null>(null);
   const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
   const [feedbackNotice, setFeedbackNotice] = useState<string | null>(null);
@@ -176,7 +120,7 @@ export default function AdminDashboardPage() {
     deletedApplicationIds.map((id) => id.trim().toLowerCase())
   );
 
-  // Map real applications from shared localStorage store
+  // Map real applications from centralized localStorage store
   const storedRecords: (ApplicationRecord & { sortTime: number })[] =
     storedApplications.map((app) => ({
       id: app.applicationNumber || app.id,
@@ -194,62 +138,44 @@ export default function AdminDashboardPage() {
       sortTime: app.submittedAt ? new Date(app.submittedAt).getTime() : 0,
     }));
 
-  const storedIds = new Set(storedRecords.map((r) => r.id.toLowerCase()));
-
-  // Seed mock applications with baseline timestamps
-  const mockRecordsWithTimestamps: (ApplicationRecord & { sortTime: number })[] = [
-    {
-      ...RECENT_APPLICATIONS[0],
-      status:
-        sharedApp.id.toLowerCase() === RECENT_APPLICATIONS[0].id.toLowerCase()
-          ? (sharedApp.adminStatus as ApplicationRecord["status"])
-          : RECENT_APPLICATIONS[0].status,
-      sortTime: new Date("2026-10-06T10:00:00Z").getTime(),
-    },
-    {
-      ...RECENT_APPLICATIONS[1],
-      sortTime: new Date("2026-10-06T09:00:00Z").getTime(),
-    },
-    {
-      ...RECENT_APPLICATIONS[2],
-      sortTime: new Date("2026-10-05T14:00:00Z").getTime(),
-    },
-    {
-      ...RECENT_APPLICATIONS[3],
-      sortTime: new Date("2026-10-05T11:00:00Z").getTime(),
-    },
-    {
-      ...RECENT_APPLICATIONS[4],
-      sortTime: new Date("2026-10-04T08:00:00Z").getTime(),
-    },
-  ];
-
-  // Merge stored applications and seed mock data, sorted by submittedAt descending
-  const allRecent = [
-    ...storedRecords,
-    ...mockRecordsWithTimestamps.filter((m) => !storedIds.has(m.id.toLowerCase())),
-  ].sort((a, b) => b.sortTime - a.sortTime);
-
   // Exclude rejected applications and deleted records from the Recent Applications queue
-  const recentApplications = allRecent.filter(
-    (app) => app.status !== "Rejected" && !deletedSet.has(app.id.toLowerCase())
-  );
+  const recentApplications = storedRecords
+    .filter((app) => app.status !== "Rejected" && !deletedSet.has(app.id.toLowerCase()))
+    .sort((a, b) => b.sortTime - a.sortTime);
 
-  const handleResetDemo = () => {
-    resetSharedDemo();
-    resetDeletedAdminApplications();
-    [
-      "BVR-2026-001248",
-      "BVR-2026-001247",
-      "BVR-2026-001246",
-      "BVR-2026-001245",
-      "BVR-2026-001244",
-    ].forEach((id) => {
-      deleteApplication(id);
-    });
-    setFeedbackNotice("Demo state reset: Initial application queue restored.");
-    setTimeout(() => setFeedbackNotice(null), 4000);
-  };
+  // Dynamic municipal counts derived strictly from available real applications
+  const totalCount = storedApplications.length;
+  const approvedCount = storedApplications.filter(
+    (a) => a.status.toLowerCase() === "approved" || a.verificationStatus === "Verified"
+  ).length;
+  const underReviewCount = storedApplications.filter(
+    (a) =>
+      a.status.toLowerCase() === "under_review" ||
+      a.status.toLowerCase() === "under review" ||
+      a.status.toLowerCase() === "correction_submitted" ||
+      a.status.toLowerCase() === "correction submitted"
+  ).length;
+  const needsCorrectionCount = storedApplications.filter(
+    (a) =>
+      a.status.toLowerCase() === "needs_correction" ||
+      a.status.toLowerCase() === "needs correction"
+  ).length;
+  const submittedCount = storedApplications.filter(
+    (a) =>
+      a.status.toLowerCase() === "submitted" ||
+      a.status.toLowerCase() === "draft"
+  ).length;
+  const rejectedCount = storedApplications.filter(
+    (a) => a.status.toLowerCase() === "rejected"
+  ).length;
+  const pendingCount = underReviewCount + submittedCount;
+
+  // Dynamic distribution percentages
+  const approvedPct = totalCount > 0 ? ((approvedCount / totalCount) * 100).toFixed(1) : "0.0";
+  const underReviewPct = totalCount > 0 ? ((underReviewCount / totalCount) * 100).toFixed(1) : "0.0";
+  const needsCorrectionPct = totalCount > 0 ? ((needsCorrectionCount / totalCount) * 100).toFixed(1) : "0.0";
+  const submittedPct = totalCount > 0 ? ((submittedCount / totalCount) * 100).toFixed(1) : "0.0";
+  const rejectedPct = totalCount > 0 ? ((rejectedCount / totalCount) * 100).toFixed(1) : "0.0";
 
   const activeSelectedApp = selectedApp
     ? selectedApp.id === sharedApp.id
@@ -323,17 +249,6 @@ export default function AdminDashboardPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={handleResetDemo}
-            className="text-xs font-semibold text-slate-700 hover:text-slate-900 border-slate-300 hover:bg-slate-100 cursor-pointer gap-1.5 shadow-2xs"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span>Reset Demo</span>
-          </Button>
-
           <Link
             href="/admin/applications"
             className={cn(
@@ -361,7 +276,7 @@ export default function AdminDashboardPage() {
         <Card className="bg-white border border-slate-200/90 rounded-2xl shadow-xs p-5 flex flex-col justify-between">
           <div className="flex items-center justify-between mb-3">
             <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-              Total Vendors
+              Total Applications
             </span>
             <div className="w-8 h-8 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center">
               <Store className="w-4 h-4" />
@@ -369,10 +284,10 @@ export default function AdminDashboardPage() {
           </div>
           <div className="space-y-1">
             <div className="text-2xl sm:text-3xl font-extrabold text-slate-900">
-              1,248
+              {totalCount.toLocaleString()}
             </div>
             <p className="text-xs text-slate-500 font-medium">
-              Registered vendors
+              Registered submissions
             </p>
           </div>
         </Card>
@@ -389,7 +304,7 @@ export default function AdminDashboardPage() {
           </div>
           <div className="space-y-1">
             <div className="text-2xl sm:text-3xl font-extrabold text-amber-700">
-              84
+              {pendingCount.toLocaleString()}
             </div>
             <p className="text-xs text-slate-500 font-medium">
               Awaiting review
@@ -409,10 +324,10 @@ export default function AdminDashboardPage() {
           </div>
           <div className="space-y-1">
             <div className="text-2xl sm:text-3xl font-extrabold text-emerald-700">
-              1,102
+              {approvedCount.toLocaleString()}
             </div>
             <p className="text-xs text-slate-500 font-medium">
-              Active vendors
+              Certified active
             </p>
           </div>
         </Card>
@@ -429,7 +344,7 @@ export default function AdminDashboardPage() {
           </div>
           <div className="space-y-1">
             <div className="text-2xl sm:text-3xl font-extrabold text-rose-700">
-              42
+              {needsCorrectionCount.toLocaleString()}
             </div>
             <p className="text-xs text-slate-500 font-medium">
               Require vendor action
@@ -446,47 +361,48 @@ export default function AdminDashboardPage() {
               Application Status Overview
             </CardTitle>
             <p className="text-xs text-slate-500">
-              Current lifecycle distribution across all 1,248 municipal applications.
+              Current lifecycle distribution across all {totalCount} municipal applications.
             </p>
           </div>
           <Badge variant="outline" className="text-xs text-slate-600 bg-slate-50">
-            Total: 1,248
+            Total: {totalCount}
           </Badge>
         </CardHeader>
 
         <CardContent className="p-5 sm:p-6 space-y-4">
           {/* Horizontal multi-color visual bar */}
           <div className="h-3 w-full rounded-full bg-slate-100 overflow-hidden flex shadow-2xs">
-            {/* Approved: ~88.3% */}
-            <div
-              className="bg-emerald-500 h-full transition-all"
-              style={{ width: "88.3%" }}
-              title="Approved: 1,102 (88.3%)"
-            />
-            {/* Under Review: ~5.3% */}
-            <div
-              className="bg-amber-500 h-full transition-all"
-              style={{ width: "5.3%" }}
-              title="Under Review: 66 (5.3%)"
-            />
-            {/* Needs Correction: ~3.4% */}
-            <div
-              className="bg-rose-500 h-full transition-all"
-              style={{ width: "3.4%" }}
-              title="Needs Correction: 42 (3.4%)"
-            />
-            {/* Submitted: ~1.4% */}
-            <div
-              className="bg-blue-500 h-full transition-all"
-              style={{ width: "1.4%" }}
-              title="Submitted: 18 (1.4%)"
-            />
-            {/* Rejected: ~1.6% */}
-            <div
-              className="bg-slate-400 h-full transition-all"
-              style={{ width: "1.6%" }}
-              title="Rejected: 20 (1.6%)"
-            />
+            {totalCount === 0 ? (
+              <div className="bg-slate-200 h-full w-full" title="No applications submitted yet" />
+            ) : (
+              <>
+                <div
+                  className="bg-emerald-500 h-full transition-all"
+                  style={{ width: `${approvedPct}%` }}
+                  title={`Approved: ${approvedCount} (${approvedPct}%)`}
+                />
+                <div
+                  className="bg-amber-500 h-full transition-all"
+                  style={{ width: `${underReviewPct}%` }}
+                  title={`Under Review: ${underReviewCount} (${underReviewPct}%)`}
+                />
+                <div
+                  className="bg-rose-500 h-full transition-all"
+                  style={{ width: `${needsCorrectionPct}%` }}
+                  title={`Needs Correction: ${needsCorrectionCount} (${needsCorrectionPct}%)`}
+                />
+                <div
+                  className="bg-blue-500 h-full transition-all"
+                  style={{ width: `${submittedPct}%` }}
+                  title={`Submitted: ${submittedCount} (${submittedPct}%)`}
+                />
+                <div
+                  className="bg-slate-400 h-full transition-all"
+                  style={{ width: `${rejectedPct}%` }}
+                  title={`Rejected: ${rejectedCount} (${rejectedPct}%)`}
+                />
+              </>
+            )}
           </div>
 
           {/* 5 Status metric cards */}
@@ -497,8 +413,8 @@ export default function AdminDashboardPage() {
                 <span className="w-2 h-2 rounded-full bg-blue-600" />
                 <span>Submitted</span>
               </div>
-              <div className="text-base font-extrabold text-blue-950">18</div>
-              <span className="text-[11px] text-blue-700 block">1.4% of total</span>
+              <div className="text-base font-extrabold text-blue-950">{submittedCount}</div>
+              <span className="text-[11px] text-blue-700 block">{submittedPct}% of total</span>
             </div>
 
             {/* 2. Under Review */}
@@ -507,8 +423,8 @@ export default function AdminDashboardPage() {
                 <span className="w-2 h-2 rounded-full bg-amber-500" />
                 <span>Under Review</span>
               </div>
-              <div className="text-base font-extrabold text-amber-950">66</div>
-              <span className="text-[11px] text-amber-700 block">5.3% of total</span>
+              <div className="text-base font-extrabold text-amber-950">{underReviewCount}</div>
+              <span className="text-[11px] text-amber-700 block">{underReviewPct}% of total</span>
             </div>
 
             {/* 3. Needs Correction */}
@@ -517,8 +433,8 @@ export default function AdminDashboardPage() {
                 <span className="w-2 h-2 rounded-full bg-rose-500" />
                 <span>Needs Correction</span>
               </div>
-              <div className="text-base font-extrabold text-rose-950">42</div>
-              <span className="text-[11px] text-rose-700 block">3.4% of total</span>
+              <div className="text-base font-extrabold text-rose-950">{needsCorrectionCount}</div>
+              <span className="text-[11px] text-rose-700 block">{needsCorrectionPct}% of total</span>
             </div>
 
             {/* 4. Approved */}
@@ -527,8 +443,8 @@ export default function AdminDashboardPage() {
                 <span className="w-2 h-2 rounded-full bg-emerald-500" />
                 <span>Approved</span>
               </div>
-              <div className="text-base font-extrabold text-emerald-950">1,102</div>
-              <span className="text-[11px] text-emerald-700 block">88.3% of total</span>
+              <div className="text-base font-extrabold text-emerald-950">{approvedCount}</div>
+              <span className="text-[11px] text-emerald-700 block">{approvedPct}% of total</span>
             </div>
 
             {/* 5. Rejected */}
@@ -537,8 +453,8 @@ export default function AdminDashboardPage() {
                 <span className="w-2 h-2 rounded-full bg-slate-500" />
                 <span>Rejected</span>
               </div>
-              <div className="text-base font-extrabold text-slate-900">20</div>
-              <span className="text-[11px] text-slate-500 block">1.6% of total</span>
+              <div className="text-base font-extrabold text-slate-900">{rejectedCount}</div>
+              <span className="text-[11px] text-slate-500 block">{rejectedPct}% of total</span>
             </div>
           </div>
         </CardContent>
@@ -634,7 +550,7 @@ export default function AdminDashboardPage() {
                   "text-xs font-semibold text-blue-700 hover:text-blue-800 hover:bg-blue-50 cursor-pointer gap-1"
                 )}
               >
-                <span>View All (84)</span>
+                <span>View All ({totalCount})</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </Link>
             </CardHeader>
@@ -660,7 +576,7 @@ export default function AdminDashboardPage() {
                           colSpan={7}
                           className="text-center py-8 text-slate-500 text-xs sm:text-sm"
                         >
-                          No recent pending applications queued for licensing evaluation.
+                          No applications have been submitted yet.
                         </TableCell>
                       </TableRow>
                     ) : (
@@ -718,7 +634,7 @@ export default function AdminDashboardPage() {
           </Card>
         </div>
 
-        {/* Right 1 Col: 9. Recent Activity & Notifications Preview (Task 10 Requirement 9) */}
+        {/* Right 1 Col: 9. Recent Activity & Notifications Preview */}
         <div className="space-y-6">
           <Card className="bg-white border border-slate-200/90 rounded-2xl shadow-xs overflow-hidden">
             <CardHeader className="p-5 pb-3 border-b border-slate-100 flex flex-row items-center justify-between">
@@ -728,89 +644,58 @@ export default function AdminDashboardPage() {
                   Recent Notifications
                 </CardTitle>
               </div>
-              <Badge className="bg-blue-700 text-white text-[10px] font-bold">
-                2 New
+              <Badge className={cn("text-[10px] font-bold", adminUnreadCount > 0 ? "bg-blue-700 text-white" : "bg-slate-100 text-slate-600")}>
+                {adminUnreadCount > 0 ? `${adminUnreadCount} New` : "All caught up"}
               </Badge>
             </CardHeader>
 
             <CardContent className="p-5 space-y-4">
-              <div className="space-y-3.5">
-                {/* Event 1: Correction submitted */}
-                <div className="flex items-start gap-3">
-                  <div className="w-2.5 h-2.5 rounded-full bg-orange-500 mt-1.5 shrink-0 ring-4 ring-orange-100" />
-                  <div className="space-y-0.5 min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-1">
-                      <p className="text-xs font-bold text-slate-900 leading-snug">
-                        Vendor Submitted Corrections
-                      </p>
-                      <span className="text-[10px] text-blue-700 font-semibold shrink-0">Just now</span>
-                    </div>
-                    <p className="text-xs text-slate-600">
-                      Juan&apos;s Food Stall resubmitted address &amp; ID.
-                    </p>
-                    <span className="font-mono text-[10px] font-bold text-slate-500 block">
-                      BVR-2026-001248
-                    </span>
-                  </div>
+              {recentNotifications.length === 0 ? (
+                <div className="py-8 text-center text-xs text-slate-500">
+                  You&apos;re all caught up. No notifications are available.
                 </div>
-
-                <div className="border-t border-slate-100" />
-
-                {/* Event 2: New application submitted */}
-                <div className="flex items-start gap-3">
-                  <div className="w-2.5 h-2.5 rounded-full bg-blue-600 mt-1.5 shrink-0 ring-4 ring-blue-100" />
-                  <div className="space-y-0.5 min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-1">
-                      <p className="text-xs font-bold text-slate-900 leading-snug">
-                        New Application Submitted
-                      </p>
-                      <span className="text-[10px] text-slate-400 shrink-0">10m ago</span>
+              ) : (
+                <div className="space-y-3.5">
+                  {recentNotifications.map((notif, idx) => (
+                    <div key={notif.id || idx}>
+                      <div className="flex items-start gap-3">
+                        <div
+                          className={cn(
+                            "w-2.5 h-2.5 rounded-full mt-1.5 shrink-0",
+                            notif.type === "new-application" && "bg-blue-600 ring-4 ring-blue-100",
+                            notif.type === "correction-submitted" && "bg-orange-500 ring-4 ring-orange-100",
+                            notif.type === "application-approved" && "bg-emerald-500",
+                            notif.type === "correction-requested" && "bg-amber-500",
+                            notif.type === "application-rejected" && "bg-rose-500",
+                            !["new-application", "correction-submitted", "application-approved", "correction-requested", "application-rejected"].includes(notif.type) && "bg-blue-500"
+                          )}
+                        />
+                        <div className="space-y-0.5 min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-1">
+                            <p className="text-xs font-bold text-slate-900 leading-snug truncate">
+                              {notif.title}
+                            </p>
+                            <span suppressHydrationWarning className="text-[10px] text-slate-400 shrink-0 font-medium">
+                              {formatRelativeTime(notif.createdAt)}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-600 line-clamp-2">
+                            {notif.message}
+                          </p>
+                          {notif.applicationNumber && (
+                            <span className="font-mono text-[10px] font-bold text-slate-500 block">
+                              {notif.applicationNumber}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      {idx < recentNotifications.length - 1 && (
+                        <div className="border-t border-slate-100 mt-3.5" />
+                      )}
                     </div>
-                    <p className="text-xs text-slate-600">
-                      Juan Dela Cruz queued for review.
-                    </p>
-                    <span className="font-mono text-[10px] font-bold text-slate-500 block">
-                      BVR-2026-001248 • Baan KM 3
-                    </span>
-                  </div>
+                  ))}
                 </div>
-
-                <div className="border-t border-slate-100" />
-
-                {/* Event 3: Application approved */}
-                <div className="flex items-start gap-3">
-                  <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 mt-1.5 shrink-0" />
-                  <div className="space-y-0.5 min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-1">
-                      <p className="text-xs font-semibold text-slate-900 leading-snug">
-                        Application Approved
-                      </p>
-                      <span className="text-[10px] text-slate-400 shrink-0">2h ago</span>
-                    </div>
-                    <p className="text-xs text-slate-600">
-                      Maria&apos;s Sari-Sari Store issued Vendor ID BUT-V-001247.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="border-t border-slate-100" />
-
-                {/* Event 4: Correction requested */}
-                <div className="flex items-start gap-3">
-                  <div className="w-2.5 h-2.5 rounded-full bg-amber-500 mt-1.5 shrink-0" />
-                  <div className="space-y-0.5 min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-1">
-                      <p className="text-xs font-semibold text-slate-900 leading-snug">
-                        Correction Requested
-                      </p>
-                      <span className="text-[10px] text-slate-400 shrink-0">Yesterday</span>
-                    </div>
-                    <p className="text-xs text-slate-600">
-                      Pedro BBQ flagged for incomplete coordinates.
-                    </p>
-                  </div>
-                </div>
-              </div>
+              )}
 
               <div className="pt-2 border-t border-slate-100">
                 <Link
@@ -889,19 +774,24 @@ export default function AdminDashboardPage() {
               {/* Action Buttons (Synced to shared application state) */}
               <div className="space-y-2 pt-2 border-t border-slate-100">
                 <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
-                  Simulated Administrative Decision
+                  Administrative Decision
                 </span>
                 <div className="grid grid-cols-3 gap-2">
                   <Button
                     size="sm"
                     onClick={() => {
-                      if (activeSelectedApp.id === sharedApp.id) {
-                        updateStatus("approved");
-                      }
+                      updateStatus("approved");
                       const existing = getApplication(activeSelectedApp.id);
+                      const match = activeSelectedApp.id.match(/(\d+)$/);
+                      const seq = match ? match[1] : "001248";
+                      const generatedVendorId = existing?.vendorId || `BUT-V-${seq}`;
                       if (existing) {
                         updateApplication(activeSelectedApp.id, {
                           status: "approved",
+                          vendorId: generatedVendorId,
+                          verificationStatus: "Verified",
+                          isVerified: true,
+                          currentStage: 4,
                         });
                       }
                       handleAction(`Application ${activeSelectedApp.id} was marked as Approved.`);
@@ -915,13 +805,14 @@ export default function AdminDashboardPage() {
                     size="sm"
                     variant="outline"
                     onClick={() => {
-                      if (activeSelectedApp.id === sharedApp.id) {
-                        updateStatus("needs-correction");
-                      }
+                      updateStatus("needs-correction");
                       const existing = getApplication(activeSelectedApp.id);
                       if (existing) {
                         updateApplication(activeSelectedApp.id, {
                           status: "needs_correction",
+                          verificationStatus: "Pending",
+                          isVerified: false,
+                          currentStage: 2,
                         });
                       }
                       handleAction(`Correction request sent for ${activeSelectedApp.id}.`);
@@ -935,19 +826,23 @@ export default function AdminDashboardPage() {
                     size="sm"
                     variant="outline"
                     onClick={() => {
-                      if (activeSelectedApp.id === sharedApp.id) {
-                        updateStatus("rejected");
-                      }
+                      updateStatus("rejected");
                       const existing = getApplication(activeSelectedApp.id);
                       if (existing) {
                         updateApplication(activeSelectedApp.id, {
                           status: "rejected",
+                          verificationStatus: "Not Verified",
+                          isVerified: false,
+                          currentStage: 2,
                         });
                       } else {
                         createApplication({
                           id: activeSelectedApp.id,
                           applicationNumber: activeSelectedApp.id,
                           status: "rejected",
+                          verificationStatus: "Not Verified",
+                          isVerified: false,
+                          currentStage: 2,
                           business: {
                             businessName: activeSelectedApp.businessName,
                           },

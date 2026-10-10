@@ -144,9 +144,14 @@ function SidebarNav({ pathname, onNavigate, onLogout }: SidebarNavProps) {
       {/* Bottom Navigation */}
       <div className="p-3 border-t border-slate-800 space-y-1">
         <Link
-          href="/"
+          href="/dashboard/help"
           onClick={onNavigate}
-          className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition-colors"
+          className={cn(
+            "w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium transition-colors cursor-pointer",
+            pathname.startsWith("/dashboard/help")
+              ? "bg-blue-600 text-white font-semibold shadow-xs"
+              : "text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+          )}
         >
           <HelpCircle className="w-4 h-4 shrink-0" />
           <span>Help / Support</span>
@@ -191,6 +196,7 @@ export default function DashboardLayout({
     if (path.startsWith("/dashboard/documents")) return "Documents";
     if (path.startsWith("/dashboard/notifications")) return "Notifications";
     if (path.startsWith("/dashboard/settings")) return "Settings";
+    if (path.startsWith("/dashboard/help")) return "Help & Support";
     return "Dashboard";
   };
 
@@ -330,6 +336,13 @@ export default function DashboardLayout({
                 >
                   <Settings className="w-4 h-4 mr-2 text-slate-500" />
                   Settings
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => router.push("/dashboard/help")}
+                  className="text-xs py-2 cursor-pointer"
+                >
+                  <HelpCircle className="w-4 h-4 mr-2 text-slate-500" />
+                  Help / Support
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem

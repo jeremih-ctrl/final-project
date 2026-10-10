@@ -7,15 +7,15 @@ import {
   ShieldAlert,
   LayoutDashboard,
   FileCheck2,
-  Store,
-  Files,
-  BarChart3,
   Bell,
   Settings,
   HelpCircle,
   LogOut,
   Menu,
   Shield,
+  Users,
+  Files,
+  BarChart3,
 } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
@@ -60,7 +60,7 @@ function AdminSidebar({ pathname, onNavigate, onLogout }: AdminSidebarProps) {
     {
       label: "Vendors",
       href: "/admin/vendors",
-      icon: Store,
+      icon: Users,
       active: pathname.startsWith("/admin/vendors"),
     },
     {
@@ -156,9 +156,14 @@ function AdminSidebar({ pathname, onNavigate, onLogout }: AdminSidebarProps) {
       {/* Bottom Navigation */}
       <div className="p-3 border-t border-slate-800/80 space-y-1">
         <Link
-          href="/"
+          href="/admin/help"
           onClick={onNavigate}
-          className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium text-slate-400 hover:bg-slate-900 hover:text-slate-200 transition-colors"
+          className={cn(
+            "w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium transition-colors cursor-pointer",
+            pathname.startsWith("/admin/help")
+              ? "bg-blue-700 text-white font-semibold shadow-xs"
+              : "text-slate-400 hover:bg-slate-900 hover:text-slate-200"
+          )}
         >
           <HelpCircle className="w-4 h-4 shrink-0" />
           <span>Help / Support</span>
@@ -212,6 +217,7 @@ export default function AdminLayout({
     if (path.startsWith("/admin/reports")) return "Reports & Analytics";
     if (path.startsWith("/admin/notifications")) return "Admin Notifications";
     if (path.startsWith("/admin/settings")) return "Portal Settings";
+    if (path.startsWith("/admin/help")) return "Help & Support";
     return "Admin Dashboard";
   };
 
@@ -359,6 +365,13 @@ export default function AdminLayout({
                 >
                   <Settings className="w-4 h-4 mr-2 text-slate-500" />
                   Settings
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => router.push("/admin/help")}
+                  className="text-xs py-2 cursor-pointer"
+                >
+                  <HelpCircle className="w-4 h-4 mr-2 text-slate-500" />
+                  Help / Support
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem

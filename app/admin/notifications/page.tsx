@@ -42,8 +42,6 @@ export default function AdminNotificationsPage() {
     unreadCount,
     markAsRead,
     markAllAsRead,
-    reset,
-    addNotification,
   } = useAdminNotifications();
 
   const [filter, setFilter] = useState<"all" | "unread" | "read">("all");
@@ -220,9 +218,9 @@ export default function AdminNotificationsPage() {
               <MailCheck className="w-6 h-6" />
             </div>
             <div className="space-y-1">
-              <h3 className="text-base font-bold text-slate-900">You&apos;re all caught up</h3>
+              <h3 className="text-base font-bold text-slate-900">You&apos;re all caught up. No notifications are available.</h3>
               <p className="text-xs sm:text-sm text-slate-500 max-w-sm mx-auto">
-                There are no new notifications at this time.
+                All vendor alerts and activity notices will be displayed here as they arrive.
               </p>
             </div>
             {filter !== "all" && (
@@ -384,112 +382,6 @@ export default function AdminNotificationsPage() {
           })
         )}
       </div>
-
-      {/* Subtle Development Simulation Area (Does not dominate the page) */}
-      <details className="mt-10 border-t border-slate-200 pt-4 text-xs text-slate-500 group">
-        <summary className="cursor-pointer font-semibold text-slate-600 hover:text-slate-900 select-none flex items-center justify-between p-2 rounded-lg hover:bg-slate-100">
-          <div className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-slate-500" />
-            <span>Developer Simulation Controls (Testing only)</span>
-          </div>
-          <span className="text-[11px] text-slate-400">Click to expand</span>
-        </summary>
-        <div className="p-4 mt-2 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <p className="text-slate-600">
-              Simulate events to test administrative notification workflows:
-            </p>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={reset}
-              className="text-xs cursor-pointer gap-1.5"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              Reset Notification Store
-            </Button>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() =>
-                addNotification({
-                  type: "new-application",
-                  title: "New Vendor Application Submitted",
-                  message:
-                    "A new vendor registration application has been submitted and is ready for review.",
-                  fullMessage:
-                    "A new vendor registration has been submitted by Juan Dela Cruz for Juan's Food Stall in Baan KM 3. Queued for evaluation.",
-                  applicationNumber: "BVR-2026-001248",
-                  vendorName: "Juan's Food Stall",
-                  status: "Submitted",
-                  actionLabel: "Review Application",
-                  actionUrl: "/admin/applications/BVR-2026-001248",
-                  href: "/admin/applications/BVR-2026-001248",
-                  priority: "high",
-                })
-              }
-              className="text-xs cursor-pointer bg-blue-50 text-blue-800 border-blue-200 hover:bg-blue-100"
-            >
-              + New Application
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() =>
-                addNotification({
-                  type: "correction-submitted",
-                  title: "Application Resubmitted for Review",
-                  message:
-                    "The vendor has submitted the requested corrections for review.",
-                  fullMessage:
-                    "Vendor Juan Dela Cruz submitted corrected street address and replacement PhilSys ID for application BVR-2026-001248.",
-                  applicationNumber: "BVR-2026-001248",
-                  vendorName: "Juan's Food Stall",
-                  status: "Under Review",
-                  actionLabel: "Review Application",
-                  actionUrl: "/admin/applications/BVR-2026-001248",
-                  href: "/admin/applications/BVR-2026-001248",
-                  priority: "high",
-                })
-              }
-              className="text-xs cursor-pointer bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100"
-            >
-              + Resubmitted Corrections
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() =>
-                addNotification({
-                  type: "document-uploaded",
-                  title: "Government ID Submitted for Verification",
-                  message:
-                    "A government ID has been submitted and is ready for verification.",
-                  fullMessage:
-                    "A government ID has been submitted for Juan's Food Stall (BVR-2026-001248) and is ready for verification.",
-                  applicationNumber: "BVR-2026-001248",
-                  vendorName: "Juan's Food Stall",
-                  status: "Under Review",
-                  actionLabel: "Review Documents",
-                  actionUrl: "/admin/documents",
-                  href: "/admin/documents",
-                  priority: "normal",
-                })
-              }
-              className="text-xs cursor-pointer bg-slate-50 text-slate-800 border-slate-200 hover:bg-slate-100"
-            >
-              + Government ID Submitted
-            </Button>
-          </div>
-        </div>
-      </details>
     </div>
   );
 }

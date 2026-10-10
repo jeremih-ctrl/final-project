@@ -22,7 +22,6 @@ import {
   MapPin,
   CheckCircle2,
   Lock,
-  ChevronRight,
   FileCheck2,
   Calendar,
   HelpCircle,
@@ -45,17 +44,47 @@ export default function DashboardPage() {
   const { application, status, updateStatus } = useSharedApplication();
   const demoStatus = status as DashboardStatus;
 
+  const hasProfile = Boolean(
+    application.vendor?.businessName ||
+      application.businessName ||
+      application.vendor?.name ||
+      application.ownerName
+  );
+
   // Vendor Canonical Data from shared application
   const vendor = {
-    businessName: application.vendor?.businessName || application.businessName || "Juan's Food Stall",
-    owner: application.vendor?.name || application.ownerName || "Juan Dela Cruz",
-    applicationNumber: application.id || application.applicationNumber || "BVR-2026-001248",
-    vendorId: application.vendorId || "BUT-V-001248",
-    contactNumber: application.vendor?.phone || application.contactNumber || "09XXXXXXXXX",
-    email: application.vendor?.email || application.email || "juan@email.com",
-    address: application.business?.address || application.street || "123 J.C. Aquino Avenue, Baan KM 3, Butuan City",
-    barangay: application.business?.barangay || application.barangay || "Baan KM 3",
-    submittedDate: application.submittedDate || "October 6, 2026",
+    businessName:
+      application.vendor?.businessName ||
+      application.businessName ||
+      "",
+    owner:
+      application.vendor?.name ||
+      application.ownerName ||
+      "",
+    applicationNumber:
+      application.id ||
+      application.applicationNumber ||
+      "",
+    vendorId:
+      application.vendorId ||
+      (status === "approved" ? "Assigned upon release" : "Pending assignment"),
+    contactNumber:
+      application.vendor?.phone ||
+      application.contactNumber ||
+      "",
+    email:
+      application.vendor?.email ||
+      application.email ||
+      "",
+    address:
+      application.business?.address ||
+      application.street ||
+      "",
+    barangay:
+      application.business?.barangay ||
+      application.barangay ||
+      "",
+    submittedDate: application.submittedDate || "Recently",
     submittedTime: "9:30 AM",
     jurisdiction: "City Government of Butuan, Agusan del Norte, Philippines",
   };
@@ -231,49 +260,6 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6 sm:space-y-8">
-      {/* 1. Demo Mock State Switcher (Preserved for review & evaluation) */}
-      <section
-        aria-label="Demo status switcher"
-        className="bg-white border border-slate-200/90 rounded-2xl p-3.5 sm:p-4 shadow-2xs"
-      >
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-slate-100 mb-2.5">
-          <div className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-blue-700" />
-            <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-              Simulation Control • Application State Switcher:
-            </span>
-          </div>
-          <span className="text-[11px] text-slate-500">
-            Preview command center states dynamically:
-          </span>
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          {([
-            { s: "draft" as DashboardStatus, label: "Draft", cls: "bg-slate-600" },
-            { s: "submitted" as DashboardStatus, label: "Submitted", cls: "bg-blue-600" },
-            { s: "under-review" as DashboardStatus, label: "Under Review", cls: "bg-amber-600" },
-            { s: "needs-correction" as DashboardStatus, label: "● Needs Correction", cls: "bg-orange-600" },
-            { s: "correction-submitted" as DashboardStatus, label: "Correction Submitted", cls: "bg-blue-700" },
-            { s: "approved" as DashboardStatus, label: "Approved", cls: "bg-emerald-600" },
-            { s: "rejected" as DashboardStatus, label: "Rejected", cls: "bg-slate-800" },
-          ]).map(({ s, label, cls }) => (
-            <button
-              key={s}
-              type="button"
-              onClick={() => updateStatus(s)}
-              className={cn(
-                "px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer",
-                demoStatus === s
-                  ? cn(cls, "text-white shadow-xs ring-2 ring-offset-1 ring-slate-400")
-                  : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-              )}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      </section>
-
       {/* 2. Command Center Header */}
       <header className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/90 shadow-2xs">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -304,9 +290,27 @@ export default function DashboardPage() {
               )}
             </div>
 
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
-              Welcome back, {vendor.owner}!
-            </h1>
+            <div className="flex flex-wrap items-center gap-3">
+              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
+                Welcome, {vendor.owner}
+              </h1>
+              {isApproved ? (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 border border-emerald-300 text-emerald-900 font-bold text-xs sm:text-sm shadow-xs">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 stroke-[2.5]" />
+                  <span>[✓ VERIFIED]</span>
+                </span>
+              ) : demoStatus === "rejected" ? (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 border border-slate-300 text-slate-800 font-bold text-xs sm:text-sm">
+                  <XCircle className="w-4 h-4 text-slate-600" />
+                  <span>NOT VERIFIED</span>
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100 border border-amber-300 text-amber-900 font-bold text-xs sm:text-sm">
+                  <Clock className="w-4 h-4 text-amber-600" />
+                  <span>VERIFICATION PENDING</span>
+                </span>
+              )}
+            </div>
 
             <p className="text-xs sm:text-sm text-slate-600 leading-relaxed max-w-2xl">
               Managing <strong className="text-slate-900">{vendor.businessName}</strong> ({vendor.barangay}). Here is the real-time status and operational command center for your municipal registration.
@@ -352,6 +356,93 @@ export default function DashboardPage() {
           </div>
         </div>
       </header>
+
+      {/* 3. Vendor Dashboard Access Notice (Pending vs Approved) */}
+      {!isApproved && !isNeedsCorrection && !isRejected && (
+        <section
+          aria-label="Pending approval banner"
+          className="rounded-2xl bg-amber-50/90 border-2 border-amber-300 p-5 sm:p-6 shadow-xs space-y-3"
+        >
+          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+            <div className="flex items-start gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-amber-100 border border-amber-300 text-amber-700 flex items-center justify-center shrink-0 mt-0.5">
+                <Clock className="w-5 h-5 stroke-[2.5]" />
+              </div>
+              <div className="space-y-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-amber-900 bg-amber-200/80 px-2 py-0.5 rounded">
+                    Approval Pending
+                  </span>
+                  <span className="text-xs text-amber-800 font-medium">
+                    Stage 2 of 4 Active • Administrative Review
+                  </span>
+                </div>
+                <h2 className="text-base sm:text-lg font-bold text-amber-950">
+                  Application Under Review — Full Dashboard Access Pending
+                </h2>
+                <p className="text-xs sm:text-sm text-amber-900 leading-relaxed max-w-3xl">
+                  Your vendor registration is currently being evaluated by the City Government of Butuan. Vendor dashboard access and certified operational features will unlock once the administrator approves your application.
+                </p>
+              </div>
+            </div>
+
+            <Link
+              href="/application-status"
+              className={cn(
+                buttonVariants({ variant: "outline", size: "sm" }),
+                "border-amber-300 bg-white hover:bg-amber-100 text-amber-950 text-xs font-bold shrink-0 self-start sm:self-center shadow-xs gap-1.5"
+              )}
+            >
+              <FileText className="w-3.5 h-3.5 text-amber-700" />
+              <span>Track Application</span>
+            </Link>
+          </div>
+        </section>
+      )}
+
+      {isApproved && (
+        <section
+          aria-label="Approved vendor access banner"
+          className="rounded-2xl bg-emerald-50/90 border-2 border-emerald-300 p-5 sm:p-6 shadow-xs space-y-3"
+        >
+          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+            <div className="flex items-start gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-emerald-100 border border-emerald-300 text-emerald-700 flex items-center justify-center shrink-0 mt-0.5">
+                <CheckCircle2 className="w-5 h-5 stroke-[2.5]" />
+              </div>
+              <div className="space-y-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-emerald-900 bg-emerald-200/80 px-2 py-0.5 rounded">
+                    Full Access Granted
+                  </span>
+                  <span className="text-xs text-emerald-800 font-medium">
+                    ✓ Verified Vendor
+                  </span>
+                </div>
+                <h2 className="text-base sm:text-lg font-bold text-emerald-950">
+                  Application Approved &amp; Vendor Verified
+                </h2>
+                <p className="text-xs sm:text-sm text-emerald-900 leading-relaxed max-w-3xl">
+                  Congratulations! The Administrator has approved your application and your vendor identity is verified. Your Vendor Dashboard is fully accessible. Next stage: municipal vendor certificate issuance.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0 self-start sm:self-center">
+              <Link
+                href="/application-status"
+                className={cn(
+                  buttonVariants({ variant: "outline", size: "sm" }),
+                  "border-emerald-300 bg-white hover:bg-emerald-100 text-emerald-950 text-xs font-bold shadow-xs gap-1.5"
+                )}
+              >
+                <FileText className="w-3.5 h-3.5 text-emerald-700" />
+                <span>Track Status</span>
+              </Link>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* 3. Action Required / Attention Banner (Section 8) */}
       {isNeedsCorrection && (
@@ -473,7 +564,7 @@ export default function DashboardPage() {
               <span className="text-slate-500">
                 {isApproved
                   ? "Your vendor registration is certified and compliant with local municipal regulations."
-                  : "We will alert you via SMS (09XXXXXXXXX) and email (juan@email.com) once your evaluation status updates."}
+                  : `We will alert you via SMS (${vendor.contactNumber || "your registered number"}) and email (${vendor.email || "your registered email"}) once your evaluation status updates.`}
               </span>
             </div>
           </div>
@@ -485,9 +576,9 @@ export default function DashboardPage() {
         </section>
       )}
 
-      {/* 4. KPI Summary Cards (Section 12) */}
+      {/* 4. KPI Summary Cards */}
       <section aria-label="Registration key metrics" className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        {/* Card 1: Status */}
+        {/* Card 1: Application Status */}
         <Card
           className={cn(
             "shadow-2xs rounded-xl p-4 sm:p-5 flex flex-col justify-between transition-all",
@@ -499,97 +590,152 @@ export default function DashboardPage() {
           )}
         >
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-medium text-slate-500">Application Status</span>
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+              Application Status
+            </span>
             <div className={cn("w-7 h-7 rounded-lg flex items-center justify-center", statusConfig.iconBg)}>
               <statusConfig.icon className="w-4 h-4" />
             </div>
           </div>
           <div className="space-y-1">
-            <Badge className={cn("text-xs font-bold", statusConfig.badgeClass)}>
-              {statusConfig.badgeLabel}
+            <Badge
+              className={cn(
+                "text-xs font-extrabold uppercase px-2.5 py-1 tracking-wide",
+                isApproved
+                  ? "bg-emerald-600 text-white border-emerald-600 shadow-2xs"
+                  : isNeedsCorrection
+                  ? "bg-orange-600 text-white border-orange-600"
+                  : isRejected
+                  ? "bg-slate-700 text-white border-slate-700"
+                  : "bg-amber-100 text-amber-950 border-amber-300"
+              )}
+            >
+              {isApproved
+                ? "APPROVED"
+                : isUnderReview
+                ? "UNDER REVIEW"
+                : isNeedsCorrection
+                ? "NEEDS CORRECTION"
+                : isRejected
+                ? "REJECTED"
+                : isSubmitted
+                ? "SUBMITTED"
+                : "DRAFT"}
             </Badge>
-            <p className="text-[11px] text-slate-500 block">
-              {isApproved ? "Accredited" : isNeedsCorrection ? "Action pending" : "In review queue"}
+            <p className="text-[11px] text-slate-500 block pt-0.5">
+              {isApproved ? "Accredited & Approved" : isNeedsCorrection ? "Action pending" : "In evaluation queue"}
             </p>
           </div>
         </Card>
 
-        {/* Card 2: Application Number */}
-        <Card className="bg-white border border-slate-200 shadow-2xs rounded-xl p-4 sm:p-5 flex flex-col justify-between">
+        {/* Card 2: Verification Status */}
+        <Card
+          className={cn(
+            "shadow-2xs rounded-xl p-4 sm:p-5 flex flex-col justify-between transition-all",
+            isApproved
+              ? "border-emerald-300 bg-emerald-50/20"
+              : "border-slate-200 bg-white"
+          )}
+        >
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-medium text-slate-500">Application No.</span>
-            <div className="w-7 h-7 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center">
-              <Hash className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="font-mono text-sm sm:text-base font-bold text-slate-900 tracking-tight">
-              {vendor.applicationNumber}
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+              Verification Status
             </span>
-            <button
-              type="button"
-              onClick={handleCopyAppNumber}
-              className="p-1.5 rounded-md hover:bg-slate-100 text-slate-500 hover:text-slate-900 transition-colors cursor-pointer"
-              title="Copy application number"
-              aria-label="Copy application number"
-            >
-              {copiedAppNumber ? (
-                <Check className="w-4 h-4 text-emerald-600" />
-              ) : (
-                <Copy className="w-4 h-4" />
-              )}
-            </button>
-          </div>
-        </Card>
-
-        {/* Card 3: Documents Overview */}
-        <Card className="bg-white border border-slate-200 shadow-2xs rounded-xl p-4 sm:p-5 flex flex-col justify-between">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-medium text-slate-500">Submitted Documents</span>
-            <div className="w-7 h-7 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center">
-              <Files className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="flex items-baseline justify-between">
-            <span className="text-xl sm:text-2xl font-extrabold text-slate-900">
-              {docStats.total}
-            </span>
-            <Link
-              href="/dashboard/documents"
-              className={cn(
-                "text-xs font-semibold hover:underline inline-flex items-center gap-1",
-                isNeedsCorrection ? "text-orange-700" : "text-blue-700"
-              )}
-            >
-              {isNeedsCorrection ? "1 Flagged" : isApproved ? "1 Verified" : "1 Attached"}
-              <ChevronRight className="w-3 h-3" />
-            </Link>
-          </div>
-        </Card>
-
-        {/* Card 4: Vendor ID / Accreditation */}
-        <Card className="bg-white border border-slate-200 shadow-2xs rounded-xl p-4 sm:p-5 flex flex-col justify-between">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-medium text-slate-500">Official Vendor ID</span>
             <div
               className={cn(
                 "w-7 h-7 rounded-lg flex items-center justify-center",
-                isApproved ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"
+                isApproved
+                  ? "bg-emerald-100 text-emerald-700"
+                  : demoStatus === "rejected"
+                  ? "bg-slate-100 text-slate-600"
+                  : "bg-amber-100 text-amber-700"
               )}
             >
               <ShieldCheck className="w-4 h-4" />
             </div>
           </div>
-          <div>
+          <div className="space-y-1">
             {isApproved ? (
-              <span className="font-mono text-sm sm:text-base font-bold text-emerald-900 block">
-                {vendor.vendorId}
-              </span>
+              <Badge className="bg-emerald-100 text-emerald-950 border-emerald-300 font-extrabold text-xs inline-flex items-center gap-1.5 py-1 shadow-2xs">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 stroke-[2.5]" />
+                <span>VERIFIED</span>
+              </Badge>
+            ) : demoStatus === "rejected" ? (
+              <Badge className="bg-slate-100 text-slate-800 border-slate-300 font-bold text-xs inline-flex items-center gap-1.5 py-1">
+                <XCircle className="w-3.5 h-3.5 text-slate-600" />
+                <span>NOT VERIFIED</span>
+              </Badge>
             ) : (
-              <span className="text-xs font-semibold text-slate-500 block">
-                Pending Approval
-              </span>
+              <Badge className="bg-amber-100 text-amber-950 border-amber-300 font-bold text-xs inline-flex items-center gap-1.5 py-1">
+                <Clock className="w-3.5 h-3.5 text-amber-600" />
+                <span>PENDING</span>
+              </Badge>
             )}
+            <p className="text-[11px] text-slate-500 block pt-0.5">
+              {isApproved
+                ? "Identity & business verified"
+                : demoStatus === "rejected"
+                ? "Verification declined"
+                : "Awaiting admin verification"}
+            </p>
+          </div>
+        </Card>
+
+        {/* Card 3: Application Number */}
+        <Card className="bg-white border border-slate-200 shadow-2xs rounded-xl p-4 sm:p-5 flex flex-col justify-between">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+              Application Number
+            </span>
+            <div className="w-7 h-7 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center">
+              <Hash className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <span className="font-mono text-sm sm:text-base font-bold text-slate-900 tracking-tight">
+                {vendor.applicationNumber}
+              </span>
+              <button
+                type="button"
+                onClick={handleCopyAppNumber}
+                className="p-1.5 rounded-md hover:bg-slate-100 text-slate-500 hover:text-slate-900 transition-colors cursor-pointer"
+                title="Copy application number"
+                aria-label="Copy application number"
+              >
+                {copiedAppNumber ? (
+                  <Check className="w-4 h-4 text-emerald-600" />
+                ) : (
+                  <Copy className="w-4 h-4" />
+                )}
+              </button>
+            </div>
+            <p className="text-[11px] text-slate-500 block">
+              Official municipal reference
+            </p>
+          </div>
+        </Card>
+
+        {/* Card 4: Business Name & Certificate */}
+        <Card className="bg-white border border-slate-200 shadow-2xs rounded-xl p-4 sm:p-5 flex flex-col justify-between">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+              Business Name
+            </span>
+            <div className="w-7 h-7 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center">
+              <Building2 className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="space-y-1.5 min-w-0">
+            <span className="text-sm font-bold text-slate-900 truncate block" title={vendor.businessName}>
+              {vendor.businessName}
+            </span>
+            <div className="flex items-center justify-between text-[11px] pt-0.5 border-t border-slate-100">
+              <span className="text-slate-500 font-medium">Certificate:</span>
+              <Badge variant="outline" className="bg-blue-50 text-blue-800 border-blue-200 font-semibold text-[10px] px-1.5 py-0">
+                PENDING
+              </Badge>
+            </div>
           </div>
         </Card>
       </section>
@@ -694,11 +840,23 @@ export default function DashboardPage() {
                   Stages of your application from initial intake to certified issuance.
                 </p>
               </div>
-              <Badge variant="outline" className="text-xs font-semibold text-slate-600 bg-slate-50">
+              <Badge
+                variant="outline"
+                className={cn(
+                  "text-xs font-semibold",
+                  isApproved
+                    ? "text-emerald-800 bg-emerald-50 border-emerald-300 font-bold"
+                    : "text-slate-600 bg-slate-50"
+                )}
+              >
                 {isApproved
-                  ? "Stage 4 of 4 Completed"
+                  ? "Stage 4 of 4 Active"
                   : isNeedsCorrection
                   ? "Action Required at Stage 2"
+                  : isRejected
+                  ? "Evaluation Concluded"
+                  : isSubmitted
+                  ? "Stage 1 of 4"
                   : "Stage 2 of 4 Active"}
               </Badge>
             </CardHeader>
@@ -728,7 +886,7 @@ export default function DashboardPage() {
                         isDraft ? "text-slate-500" : "text-emerald-700"
                       )}
                     >
-                      {isDraft ? "○ In Progress" : "✓ Form Submitted"}
+                      {isDraft ? "○ In Progress" : "Completed"}
                     </span>
                   </div>
                 </div>
@@ -744,6 +902,8 @@ export default function DashboardPage() {
                         ? "bg-orange-600 text-white ring-4 ring-orange-100 animate-pulse"
                         : isDraft
                         ? "bg-slate-100 text-slate-400 border border-slate-300"
+                        : isRejected
+                        ? "bg-slate-700 text-white"
                         : "bg-amber-500 text-white ring-4 ring-amber-100"
                     )}
                   >
@@ -753,6 +913,8 @@ export default function DashboardPage() {
                       <AlertTriangle className="w-4 h-4" />
                     ) : isDraft ? (
                       "2"
+                    ) : isRejected ? (
+                      <XCircle className="w-4 h-4" />
                     ) : (
                       <Clock className="w-4 h-4" />
                     )}
@@ -770,15 +932,19 @@ export default function DashboardPage() {
                           ? "text-orange-700"
                           : isDraft
                           ? "text-slate-400"
+                          : isRejected
+                          ? "text-slate-600"
                           : "text-amber-700"
                       )}
                     >
                       {isApproved
-                        ? "✓ Administrative Review"
+                        ? "Completed"
                         : isNeedsCorrection
                         ? "⚠ Action Required"
                         : isDraft
                         ? "○ Upcoming"
+                        : isRejected
+                        ? "Evaluation Concluded"
                         : "● Current Stage"}
                     </span>
                   </div>
@@ -803,10 +969,10 @@ export default function DashboardPage() {
                     <span
                       className={cn(
                         "text-[11px] font-semibold block mt-0.5",
-                        isApproved ? "text-emerald-700" : "text-slate-400"
+                        isApproved ? "text-emerald-700 font-bold" : "text-slate-400"
                       )}
                     >
-                      {isApproved ? "✓ Vendor Verification" : "○ Pending Stage 2"}
+                      {isApproved ? "Verified / Completed" : "○ Pending Stage 2"}
                     </span>
                   </div>
                 </div>
@@ -817,11 +983,15 @@ export default function DashboardPage() {
                     className={cn(
                       "w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs shrink-0 shadow-2xs",
                       isApproved
-                        ? "bg-emerald-600 text-white ring-4 ring-emerald-100"
+                        ? "bg-blue-600 text-white ring-4 ring-blue-100 animate-pulse"
                         : "bg-slate-100 text-slate-400 border border-slate-300"
                     )}
                   >
-                    {isApproved ? <Check className="w-4 h-4 stroke-[3]" /> : "4"}
+                    {isApproved ? (
+                      <span className="w-2.5 h-2.5 rounded-full bg-white" />
+                    ) : (
+                      "4"
+                    )}
                   </div>
                   <div className="min-w-0">
                     <p className="text-xs font-bold text-slate-900 leading-tight">
@@ -830,10 +1000,10 @@ export default function DashboardPage() {
                     <span
                       className={cn(
                         "text-[11px] font-semibold block mt-0.5",
-                        isApproved ? "text-emerald-700" : "text-slate-400"
+                        isApproved ? "text-blue-700 font-bold" : "text-slate-400"
                       )}
                     >
-                      {isApproved ? "✓ Vendor Certificate Issuance" : "○ Final Stage"}
+                      {isApproved ? "● Current Stage (Pending)" : "○ Pending"}
                     </span>
                   </div>
                 </div>
@@ -946,57 +1116,165 @@ export default function DashboardPage() {
                   "text-xs font-semibold text-blue-700 hover:text-blue-800 hover:bg-blue-50 cursor-pointer"
                 )}
               >
-                Edit Business Profile
+                {hasProfile ? "Edit Business Profile" : "Set Up Profile"}
               </Link>
             </CardHeader>
 
-            <CardContent className="p-5 sm:p-6 space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs sm:text-sm">
-                <div className="space-y-1">
-                  <span className="text-slate-500 font-medium block">Business Name:</span>
-                  <span className="font-bold text-slate-900 block text-sm sm:text-base">
-                    {vendor.businessName}
-                  </span>
+            {!hasProfile ? (
+              <CardContent className="p-6 text-center space-y-3">
+                <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center mx-auto text-slate-400">
+                  <Building2 className="w-5 h-5" />
                 </div>
+                <p className="text-xs sm:text-sm text-slate-600 max-w-sm mx-auto">
+                  Complete your business profile to view your registered business information.
+                </p>
+                <Link
+                  href="/dashboard/business-profile"
+                  className={cn(buttonVariants({ size: "sm" }), "text-xs font-semibold")}
+                >
+                  Complete Profile
+                </Link>
+              </CardContent>
+            ) : (
+              <CardContent className="p-5 sm:p-6 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs sm:text-sm">
+                  <div className="space-y-1">
+                    <span className="text-slate-500 font-medium block">Business Name:</span>
+                    <span className="font-bold text-slate-900 block text-sm sm:text-base">
+                      {vendor.businessName}
+                    </span>
+                  </div>
 
-                <div className="space-y-1">
-                  <span className="text-slate-500 font-medium block">Registered Owner:</span>
-                  <span className="font-semibold text-slate-900 block">{vendor.owner}</span>
-                </div>
+                  <div className="space-y-1">
+                    <span className="text-slate-500 font-medium block">Registered Owner:</span>
+                    <span className="font-semibold text-slate-900 block">{vendor.owner}</span>
+                  </div>
 
-                <div className="space-y-1">
-                  <span className="text-slate-500 font-medium block">Contact Number:</span>
-                  <span className="font-semibold text-slate-900 block font-mono">
-                    {vendor.contactNumber}
-                  </span>
-                </div>
+                  <div className="space-y-1">
+                    <span className="text-slate-500 font-medium block">Contact Number:</span>
+                    <span className="font-semibold text-slate-900 block font-mono">
+                      {vendor.contactNumber}
+                    </span>
+                  </div>
 
-                <div className="space-y-1">
-                  <span className="text-slate-500 font-medium block">Email Address:</span>
-                  <span className="font-semibold text-slate-900 block">{vendor.email}</span>
-                </div>
+                  <div className="space-y-1">
+                    <span className="text-slate-500 font-medium block">Email Address:</span>
+                    <span className="font-semibold text-slate-900 block">{vendor.email}</span>
+                  </div>
 
-                <div className="sm:col-span-2 space-y-1">
-                  <span className="text-slate-500 font-medium block">Operating Address:</span>
-                  <div className="flex items-start gap-1.5">
-                    <MapPin className="w-4 h-4 text-blue-600 mt-0.5 shrink-0" />
-                    <span className="font-semibold text-slate-900 block">{vendor.address}</span>
+                  <div className="sm:col-span-2 space-y-1">
+                    <span className="text-slate-500 font-medium block">Operating Address:</span>
+                    <div className="flex items-start gap-1.5">
+                      <MapPin className="w-4 h-4 text-blue-600 mt-0.5 shrink-0" />
+                      <span className="font-semibold text-slate-900 block">{vendor.address}</span>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Fixed Jurisdiction Box (Cannot be edited) */}
-              <div className="pt-3 border-t border-slate-100 flex items-start gap-2.5 p-3 rounded-xl bg-slate-50 border border-slate-200/70 text-xs">
-                <Lock className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
-                <div className="text-slate-600">
-                  <span className="font-bold text-slate-800 block">
-                    Municipal Jurisdiction: Butuan City, Agusan del Norte (Barangay {vendor.barangay})
-                  </span>
-                  <span>
-                    Official LGU jurisdiction is fixed to Butuan City Ordinance guidelines and cannot be altered.
-                  </span>
+                {/* Fixed Jurisdiction Box (Cannot be edited) */}
+                <div className="pt-3 border-t border-slate-100 flex items-start gap-2.5 p-3 rounded-xl bg-slate-50 border border-slate-200/70 text-xs">
+                  <Lock className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
+                  <div className="text-slate-600">
+                    <span className="font-bold text-slate-800 block">
+                      Municipal Jurisdiction: Butuan City, Agusan del Norte (Barangay {vendor.barangay || "Urduja"})
+                    </span>
+                    <span>
+                      Official LGU jurisdiction is fixed to Butuan City Ordinance guidelines and cannot be altered.
+                    </span>
+                  </div>
                 </div>
+              </CardContent>
+            )}
+          </Card>
+
+          {/* Vending Logistics & Compliance Card */}
+          <Card className="bg-white border border-slate-200/90 rounded-2xl shadow-xs overflow-hidden">
+            <CardHeader className="p-5 pb-3 border-b border-slate-100 flex flex-row items-center justify-between">
+              <div className="flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-teal-700" />
+                <CardTitle className="text-base sm:text-lg font-bold text-slate-900">
+                  Vending Logistics & Compliance
+                </CardTitle>
               </div>
+              <Badge variant="outline" className="text-[11px] font-semibold text-slate-600 bg-slate-50">
+                {application.isVerified ? "Location Verified" : "Pending Verification"}
+              </Badge>
+            </CardHeader>
+
+            <CardContent className="p-5 sm:p-6 space-y-4">
+              {!vendor.address && !application.business?.category ? (
+                <div className="p-6 text-center text-xs sm:text-sm text-slate-500">
+                  No logistics information is currently available for this application.
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1">
+                      <span className="text-[11px] text-slate-500 font-medium block">
+                        Declared Vending Location
+                      </span>
+                      <p className="text-sm font-bold text-slate-900">
+                        {vendor.address || "Not specified"}{vendor.barangay ? `, ${vendor.barangay}` : ""}
+                      </p>
+                      <span className="inline-block text-[11px] text-emerald-700 font-medium bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200/60 mt-1">
+                        Submitted by Vendor
+                      </span>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1">
+                      <span className="text-[11px] text-slate-500 font-medium block">
+                        Vending Category & Activity
+                      </span>
+                      <p className="text-sm font-bold text-slate-900">
+                        {application.business?.category || "General Vending"}
+                      </p>
+                      <span className="inline-block text-[11px] text-blue-700 font-medium bg-blue-50 px-2 py-0.5 rounded border border-blue-200/60 mt-1">
+                        Declared Activity
+                      </span>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1">
+                      <span className="text-[11px] text-slate-500 font-medium block">
+                        Site Inspection Schedule
+                      </span>
+                      <p className="text-xs text-slate-600 font-medium">
+                        No on-site inspection appointment is currently scheduled.
+                      </p>
+                      <span className="inline-block text-[11px] text-slate-600 font-medium bg-slate-100 px-2 py-0.5 rounded mt-1">
+                        Awaiting Review Schedule
+                      </span>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1">
+                      <span className="text-[11px] text-slate-500 font-medium block">
+                        Location Verification Status
+                      </span>
+                      <p className="text-xs font-semibold text-slate-800">
+                        {application.isVerified
+                          ? "Verified by City Administrator"
+                          : "Not yet verified by City Administrator"}
+                      </p>
+                      <span
+                        className={cn(
+                          "inline-block text-[11px] font-medium px-2 py-0.5 rounded mt-1",
+                          application.isVerified
+                            ? "text-emerald-700 bg-emerald-50 border border-emerald-200/60"
+                            : "text-amber-800 bg-amber-50 border border-amber-200/60"
+                        )}
+                      >
+                        {application.isVerified ? "Verified" : "Pending Field Inspection"}
+                      </span>
+                    </div>
+                  </div>
+
+                  {application.adminRemarks && (
+                    <div className="p-3 rounded-xl bg-blue-50/60 border border-blue-200/70 text-xs text-blue-950 space-y-1">
+                      <span className="font-bold block">Logistics & Compliance Notes</span>
+                      <p className="text-blue-900 text-xs">{application.adminRemarks}</p>
+                    </div>
+                  )}
+                </>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -1184,7 +1462,7 @@ export default function DashboardPage() {
                           <span className="text-[10px] text-slate-400">Oct 6</span>
                         </div>
                         <p className="text-xs text-slate-600 leading-snug">
-                          Application approved. Official Vendor ID BUT-V-001248 generated.
+                          Application approved. Official Vendor ID {vendor.vendorId || "assigned"} generated.
                         </p>
                       </div>
                     </div>
@@ -1204,7 +1482,7 @@ export default function DashboardPage() {
                           <span className="text-[10px] text-slate-400">Oct 6 • 9:30 AM</span>
                         </div>
                         <p className="text-xs text-slate-600 leading-snug">
-                          Vendor registration BVR-2026-001248 received by licensing office.
+                          Vendor registration {vendor.applicationNumber || "application"} received by licensing office.
                         </p>
                       </div>
                     </div>
@@ -1291,7 +1569,7 @@ export default function DashboardPage() {
                   <span className="text-slate-400 font-normal">Today • 9:30 AM</span>
                 </div>
                 <p className="text-xs text-slate-600 leading-snug">
-                  Registration BVR-2026-001248 was recorded in the municipal registry.
+                  Registration {vendor.applicationNumber || "application"} was recorded in the municipal registry.
                 </p>
               </div>
 

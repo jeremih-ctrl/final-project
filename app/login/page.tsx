@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { setVendorSession } from "@/lib/demo-auth";
+import { getApplications } from "@/lib/application-store";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -107,9 +108,16 @@ export default function LoginPage() {
     setIsSubmitting(true);
 
     // Save demo vendor session
+    const storedApps = getApplications();
+    const foundApp = storedApps.find(
+      (a) => a.contact.emailAddress.toLowerCase() === email.trim().toLowerCase()
+    );
+    const emailPrefix = email.split("@")[0].replace(/[._-]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+    const resolvedName = foundApp?.owner.ownerName || emailPrefix || "Registered Vendor";
+
     setVendorSession({
       email: email.trim(),
-      name: "Juan Dela Cruz",
+      name: resolvedName,
       role: "Local Vendor",
     });
 
@@ -304,10 +312,10 @@ export default function LoginPage() {
               </p>
             </div>
 
-            {/* Demo / Prototype Note */}
+            {/* Vendor Access Guidance Note */}
             <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 text-[11px] text-slate-500 text-center flex items-center justify-center gap-1.5">
               <HelpCircle className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-              <span>Demo Mode: Enter any valid email and password to proceed.</span>
+              <span>Use your registered vendor email and password to access your account.</span>
             </div>
           </CardContent>
         </Card>

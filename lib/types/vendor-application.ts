@@ -125,6 +125,12 @@ export interface VendorApplication {
   // 2. Application status
   /** Current lifecycle status */
   status: ApplicationStatus;
+  /** Verification status of the vendor */
+  verificationStatus?: "Verified" | "Pending" | "Not Verified";
+  /** Whether the vendor has completed identity verification */
+  isVerified?: boolean;
+  /** Numerical application stage (e.g. 1, 2, 3, 4) */
+  currentStage?: number;
 
   // 3. Business information
   business: BusinessInformation;

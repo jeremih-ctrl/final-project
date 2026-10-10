@@ -21,7 +21,6 @@ import {
   UploadCloud,
   Eye,
   RefreshCw,
-  Trash2,
   CheckCircle2,
   AlertCircle,
   FileCheck2,
@@ -29,15 +28,29 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { addAdminNotification } from "@/lib/notifications-data";
+import { useSharedApplication } from "@/lib/vendor-application-state";
+import { updateApplication } from "@/lib/application-store";
 
 type DocStatus = "Submitted" | "Under Review" | "Accepted" | "Needs Replacement";
 
 export default function DocumentsPage() {
+  const { application } = useSharedApplication();
+  const primaryDoc = application.documents?.[0];
+  const applicantName = application.vendor?.name || application.ownerName || "Registered Vendor";
+
   // Document state
-  const [hasDocument, setHasDocument] = useState(true);
-  const [docStatus, setDocStatus] = useState<DocStatus>("Submitted");
-  const [docName, setDocName] = useState("government-id.pdf");
-  const [submissionDate] = useState("October 6, 2026");
+  const [hasDocument, setHasDocument] = useState(Boolean(primaryDoc?.filename));
+  const [docStatus, setDocStatus] = useState<DocStatus>(
+    primaryDoc?.status === "Verified"
+      ? "Accepted"
+      : primaryDoc?.status === "Replacement Requested"
+      ? "Needs Replacement"
+      : "Submitted"
+  );
+  const [docName, setDocName] = useState(
+    primaryDoc?.filename || "government-id.pdf"
+  );
+  const [submissionDate] = useState(primaryDoc?.uploadedAt || application.submittedDate || "Recently");
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [replaceDialogOpen, setReplaceDialogOpen] = useState(false);
 
@@ -83,14 +96,33 @@ export default function DocumentsPage() {
       setReplaceDialogOpen(false);
       setUploadSuccessMsg("Document attached to registration record.");
 
+      const appNum = application.applicationNumber || application.id || "BVR-2026-001248";
+      const vName =
+        application.business?.businessName ||
+        application.vendor?.businessName ||
+        application.vendor?.name ||
+        "Montilla Street Produce & Snacks";
+
+      updateApplication(appNum, {
+        documents: [
+          {
+            id: `doc-${Date.now()}`,
+            filename: fileName,
+            idType: "Philippine National ID (PhilSys)",
+            uploadedAt: new Date().toISOString(),
+            status: "Submitted",
+          },
+        ],
+      });
+
       // Workflow notification to Admin
       addAdminNotification({
         type: "document-uploaded",
         title: "Government ID Submitted for Verification",
         message: "A government ID has been submitted and is ready for verification.",
-        fullMessage: `A new government ID (${fileName}) has been submitted for application BVR-2026-001248 and is ready for verification.`,
-        applicationNumber: "BVR-2026-001248",
-        vendorName: "Juan's Food Stall",
+        fullMessage: `A new government ID (${fileName}) has been submitted for application ${appNum} and is ready for verification.`,
+        applicationNumber: appNum,
+        vendorName: vName,
         status: "Under Review",
         actionLabel: "Review Documents",
         actionUrl: "/admin/documents",
@@ -172,14 +204,6 @@ export default function DocumentsPage() {
               If no ID is provided, your registration will display &ldquo;No Government ID Submitted&rdquo;.
             </AlertDescription>
           </div>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setHasDocument(!hasDocument)}
-            className="text-xs font-semibold text-blue-700 border-blue-300 hover:bg-blue-100/60 shrink-0 cursor-pointer self-start sm:self-auto"
-          >
-            {hasDocument ? "Preview: No Government ID (Empty State)" : "Restore: ID Submitted"}
-          </Button>
         </div>
       </Alert>
 
@@ -264,7 +288,7 @@ export default function DocumentsPage() {
                         </div>
                         <div className="flex justify-between">
                           <span>Applicant:</span>
-                          <span className="font-semibold text-slate-800">Juan Dela Cruz</span>
+                          <span className="font-semibold text-slate-800">{applicantName}</span>
                         </div>
                       </div>
                     </div>
@@ -333,17 +357,6 @@ export default function DocumentsPage() {
                     </DialogFooter>
                   </DialogContent>
                 </Dialog>
-
-                {/* Remove button to allow testing the empty state */}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setHasDocument(false)}
-                  className="text-xs font-medium text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
-                  title="Remove to preview empty state"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </Button>
               </div>
             </div>
 

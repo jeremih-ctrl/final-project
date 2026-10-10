@@ -29,30 +29,58 @@ import {
   Info,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useSharedApplication } from "@/lib/vendor-application-state";
+import { updateApplication } from "@/lib/application-store";
 
 export default function BusinessProfilePage() {
-  // 1. Business Info State (Mock data)
+  const { application } = useSharedApplication();
+
+  // 1. Business Info State
   const [businessInfo, setBusinessInfo] = useState({
-    businessName: "Juan's Food Stall",
-    ownerName: "Juan Dela Cruz",
-    businessDescription: "Local food vendor serving affordable meals and snacks.",
+    businessName:
+      application.business?.businessName ||
+      application.vendor?.businessName ||
+      application.businessName ||
+      "",
+    ownerName:
+      application.vendor?.name ||
+      application.ownerName ||
+      "",
+    businessDescription:
+      application.business?.description ||
+      "",
   });
   const [tempBusinessInfo, setTempBusinessInfo] = useState(businessInfo);
   const [businessDialogOpen, setBusinessDialogOpen] = useState(false);
 
-  // 2. Contact Info State (Mock data)
+  // 2. Contact Info State
   const [contactInfo, setContactInfo] = useState({
-    contactNumber: "09XXXXXXXXX",
-    email: "juan@email.com",
+    contactNumber:
+      application.vendor?.phone ||
+      application.contactNumber ||
+      "",
+    email:
+      application.vendor?.email ||
+      application.email ||
+      "",
   });
   const [tempContactInfo, setTempContactInfo] = useState(contactInfo);
   const [contactDialogOpen, setContactDialogOpen] = useState(false);
 
-  // 3. Address Info State (Mock data with fixed jurisdiction)
+  // 3. Address Info State
   const [addressInfo, setAddressInfo] = useState({
-    houseNo: "123",
-    street: "J.C. Aquino Avenue",
-    barangay: "Baan KM 3",
+    houseNo:
+      application.business?.houseNumber ||
+      application.houseNumber ||
+      "",
+    street:
+      application.business?.street ||
+      application.street ||
+      "",
+    barangay:
+      application.business?.barangay ||
+      application.barangay ||
+      "",
   });
   const [tempAddressInfo, setTempAddressInfo] = useState(addressInfo);
   const [addressDialogOpen, setAddressDialogOpen] = useState(false);
@@ -64,6 +92,15 @@ export default function BusinessProfilePage() {
     e.preventDefault();
     setBusinessInfo(tempBusinessInfo);
     setBusinessDialogOpen(false);
+    updateApplication(application.applicationNumber || application.id, {
+      business: {
+        businessName: tempBusinessInfo.businessName,
+        businessDescription: tempBusinessInfo.businessDescription,
+      },
+      owner: {
+        ownerName: tempBusinessInfo.ownerName,
+      },
+    });
     setSavedFeedback("Business information updated successfully.");
     setTimeout(() => setSavedFeedback(null), 4000);
   };
@@ -72,6 +109,12 @@ export default function BusinessProfilePage() {
     e.preventDefault();
     setContactInfo(tempContactInfo);
     setContactDialogOpen(false);
+    updateApplication(application.applicationNumber || application.id, {
+      contact: {
+        contactNumber: tempContactInfo.contactNumber,
+        emailAddress: tempContactInfo.email,
+      },
+    });
     setSavedFeedback("Contact information updated successfully.");
     setTimeout(() => setSavedFeedback(null), 4000);
   };
@@ -80,6 +123,13 @@ export default function BusinessProfilePage() {
     e.preventDefault();
     setAddressInfo(tempAddressInfo);
     setAddressDialogOpen(false);
+    updateApplication(application.applicationNumber || application.id, {
+      address: {
+        houseNo: tempAddressInfo.houseNo,
+        street: tempAddressInfo.street,
+        barangay: tempAddressInfo.barangay,
+      },
+    });
     setSavedFeedback("Operating address updated successfully.");
     setTimeout(() => setSavedFeedback(null), 4000);
   };
@@ -101,9 +151,23 @@ export default function BusinessProfilePage() {
             <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900">
               Business Profile
             </h2>
-            <Badge className="bg-amber-100 text-amber-900 border-amber-300 text-xs font-semibold">
-              ● Under Review
-            </Badge>
+            {application.status === "approved" ? (
+              <Badge className="bg-emerald-100 text-emerald-950 border-emerald-300 text-xs font-bold">
+                ● Approved (Certified)
+              </Badge>
+            ) : application.status === "needs-correction" ? (
+              <Badge className="bg-orange-100 text-orange-950 border-orange-300 text-xs font-bold">
+                ● Needs Correction
+              </Badge>
+            ) : application.status === "rejected" ? (
+              <Badge className="bg-slate-100 text-slate-800 border-slate-300 text-xs font-semibold">
+                ● Not Approved
+              </Badge>
+            ) : (
+              <Badge className="bg-amber-100 text-amber-900 border-amber-300 text-xs font-semibold">
+                ● Under Review
+              </Badge>
+            )}
           </div>
           <p className="text-xs sm:text-sm text-slate-600 mt-1">
             View and manage your registered business information.
@@ -139,7 +203,7 @@ export default function BusinessProfilePage() {
             Application Number
           </span>
           <span className="font-mono text-sm sm:text-base font-bold text-slate-900">
-            BVR-2026-001248
+            {application.applicationNumber || application.id || "Pending Submission"}
           </span>
         </div>
 
@@ -149,10 +213,10 @@ export default function BusinessProfilePage() {
           </span>
           <div className="flex items-center gap-2">
             <span className="text-xs sm:text-sm font-semibold text-slate-600">
-              Not assigned yet
+              {application.vendorId || (application.status === "approved" ? "Assigned upon release" : "Not assigned yet")}
             </span>
             <Badge variant="outline" className="text-[10px] text-slate-500 bg-slate-50">
-              Pending Approval
+              {application.vendorId ? "Assigned" : "Pending Approval"}
             </Badge>
           </div>
         </div>
@@ -166,6 +230,22 @@ export default function BusinessProfilePage() {
           </span>
         </div>
       </div>
+
+      {!businessInfo.businessName && !businessInfo.ownerName && !contactInfo.contactNumber && !addressInfo.street && (
+        <div className="bg-white border border-slate-200/90 rounded-2xl p-6 sm:p-8 text-center space-y-3 shadow-xs">
+          <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mx-auto text-slate-500">
+            <Building2 className="w-6 h-6" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-base sm:text-lg font-bold text-slate-900">
+              Complete your business profile to view your registered business information.
+            </h3>
+            <p className="text-xs sm:text-sm text-slate-500 max-w-md mx-auto">
+              You haven&apos;t set up your vendor registration profile yet. Enter your business, contact, and vending address details below.
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* 1. Card: Business Information */}
@@ -281,7 +361,7 @@ export default function BusinessProfilePage() {
                 Business Name
               </span>
               <span className="text-base font-bold text-slate-900 block">
-                {businessInfo.businessName}
+                {businessInfo.businessName || "Not yet provided"}
               </span>
             </div>
 
@@ -290,7 +370,7 @@ export default function BusinessProfilePage() {
                 Owner Name
               </span>
               <span className="text-sm font-semibold text-slate-800 block">
-                {businessInfo.ownerName}
+                {businessInfo.ownerName || "Not yet provided"}
               </span>
             </div>
 
@@ -299,7 +379,7 @@ export default function BusinessProfilePage() {
                 Business Description
               </span>
               <p className="text-xs sm:text-sm text-slate-700 leading-relaxed bg-slate-50 p-3 rounded-xl border border-slate-200/80">
-                &ldquo;{businessInfo.businessDescription}&rdquo;
+                {businessInfo.businessDescription ? `“${businessInfo.businessDescription}”` : "No description provided."}
               </p>
             </div>
           </CardContent>
@@ -406,7 +486,7 @@ export default function BusinessProfilePage() {
                   Contact Number
                 </span>
                 <span className="text-sm sm:text-base font-bold text-slate-900 block font-mono">
-                  {contactInfo.contactNumber}
+                  {contactInfo.contactNumber || "Not yet provided"}
                 </span>
                 <span className="text-[11px] text-emerald-700 font-medium">
                   Verified for SMS notifications
@@ -423,7 +503,7 @@ export default function BusinessProfilePage() {
                   Email Address
                 </span>
                 <span className="text-sm sm:text-base font-bold text-slate-900 block">
-                  {contactInfo.email}
+                  {contactInfo.email || "Not yet provided"}
                 </span>
                 <span className="text-[11px] text-slate-500">
                   Primary channel for official notices and receipts
@@ -585,21 +665,21 @@ export default function BusinessProfilePage() {
                 <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1">
                   <span className="text-slate-500 font-medium block">House/Building No.:</span>
                   <span className="font-bold text-slate-900 block text-sm">
-                    {addressInfo.houseNo}
+                    {addressInfo.houseNo || "—"}
                   </span>
                 </div>
 
                 <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1">
                   <span className="text-slate-500 font-medium block">Street:</span>
                   <span className="font-bold text-slate-900 block text-sm">
-                    {addressInfo.street}
+                    {addressInfo.street || "Not yet provided"}
                   </span>
                 </div>
 
                 <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1">
                   <span className="text-slate-500 font-medium block">Barangay:</span>
                   <span className="font-bold text-slate-900 block text-sm">
-                    {addressInfo.barangay}
+                    {addressInfo.barangay || "Not yet provided"}
                   </span>
                 </div>
               </div>

@@ -99,6 +99,11 @@ export interface SharedApplication {
   status: VendorAppStatus;
   adminStatus: AdminApplicationStatus;
 
+  // Verification & Stage models
+  verificationStatus?: "Verified" | "Pending" | "Not Verified";
+  isVerified?: boolean;
+  currentStage?: number;
+
   // Timestamps
   submittedAt: string;
   submittedDate: string;
@@ -146,34 +151,37 @@ export const INITIAL_APPLICATION: SharedApplication = {
 
   vendor: {
     id: "BUT-V-001248",
-    name: "Juan Dela Cruz",
-    businessName: "Juan's Food Stall",
-    email: "juan@email.com",
-    phone: "09XXXXXXXXX",
+    name: "Maria Santos",
+    businessName: "Montilla Street Produce & Snacks",
+    email: "maria.santos@email.com",
+    phone: "09181234567",
   },
 
   business: {
-    name: "Juan's Food Stall",
-    businessName: "Juan's Food Stall",
-    category: "Food & Refreshment",
-    address: "123 J.C. Aquino Avenue, Baan KM 3, Butuan City",
-    barangay: "Baan KM 3",
-    description: "Local food vendor serving affordable meals and snacks.",
+    name: "Montilla Street Produce & Snacks",
+    businessName: "Montilla Street Produce & Snacks",
+    category: "Produce & Snacks / Market Stall",
+    address: "Montilla Boulevard, Barangay Urduja, Butuan City",
+    barangay: "Barangay Urduja",
+    description: "Produce, local snacks, and fresh goods in Butuan City.",
     houseNumber: "123",
-    street: "J.C. Aquino Avenue",
+    street: "Montilla Boulevard",
     city: "Butuan City",
     province: "Agusan del Norte",
     region: "Caraga",
     country: "Philippines",
   },
 
-  status: "needs-correction",
-  adminStatus: "Needs Correction",
+  status: "under-review",
+  adminStatus: "Under Review",
+  verificationStatus: "Pending",
+  isVerified: false,
+  currentStage: 2,
 
   submittedAt: "October 6, 2026 • 9:30 AM",
   submittedDate: "October 6, 2026",
-  updatedAt: "October 6, 2026 • 2:45 PM",
-  lastUpdatedText: "Correction notice issued Oct 6, 2026 • 2:45 PM",
+  updatedAt: "October 6, 2026 • 9:30 AM",
+  lastUpdatedText: "Submitted Oct 6, 2026 • 9:30 AM",
 
   documents: [
     {
@@ -258,13 +266,13 @@ export const INITIAL_APPLICATION: SharedApplication = {
   ],
 
   // Flat field aliases
-  businessName: "Juan's Food Stall",
-  ownerName: "Juan Dela Cruz",
-  contactNumber: "09XXXXXXXXX",
-  email: "juan@email.com",
-  barangay: "Baan KM 3",
+  businessName: "Montilla Street Produce & Snacks",
+  ownerName: "Maria Santos",
+  contactNumber: "09181234567",
+  email: "maria.santos@email.com",
+  barangay: "Barangay Urduja",
   houseNumber: "123",
-  street: "J.C. Aquino Avenue",
+  street: "Montilla Boulevard",
   city: "Butuan City",
   province: "Agusan del Norte",
   region: "Caraga",
@@ -361,6 +369,7 @@ export function statusToVendorLabel(status: string): string {
 // ─── LocalStorage & Centralized Synchronization ───────────────────────────────
 
 export const SHARED_APP_STORAGE_KEY = "butuan_vendor_application_bvr_2026_001248";
+export const SHARED_APP_STATUS_KEY = "bvr_shared_app_state";
 export const APP_UPDATED_EVENT = "bvr_application_state_updated";
 export const VENDOR_NOTIFICATIONS_KEY = "bvr_vendor_notifications_v1";
 
@@ -392,7 +401,7 @@ function recordStatusNotification(
     const raw = localStorage.getItem(VENDOR_NOTIFICATIONS_KEY);
     let list: VendorNotification[] = raw ? JSON.parse(raw) : [...INITIAL_VENDOR_NOTIFICATIONS];
 
-    const timestamp = formatCurrentTimestamp();
+    const timestamp = new Date().toISOString();
     let newNotif: VendorNotification | null = null;
 
     if (newStatus === "needs-correction") {
@@ -505,26 +514,98 @@ export function getSharedApplication(): SharedApplication {
 
   try {
     const raw = localStorage.getItem(SHARED_APP_STORAGE_KEY);
-    if (!raw) {
+    let parsed: Partial<SharedApplication> | null = null;
+    if (raw) {
+      try {
+        parsed = JSON.parse(raw) as Partial<SharedApplication>;
+      } catch {
+        parsed = null;
+      }
+    }
+
+    // Also check lightweight status state if available
+    const rawStatus = localStorage.getItem(SHARED_APP_STATUS_KEY);
+    let statusState: {
+      status?: AdminApplicationStatus;
+      verificationStatus?: "Verified" | "Not Verified" | "Pending";
+      isVerified?: boolean;
+      currentStage?: number;
+    } | null = null;
+    if (rawStatus) {
+      try {
+        statusState = JSON.parse(rawStatus) as {
+          status?: AdminApplicationStatus;
+          verificationStatus?: "Verified" | "Not Verified" | "Pending";
+          isVerified?: boolean;
+          currentStage?: number;
+        };
+      } catch {
+        statusState = null;
+      }
+    }
+
+    if (!parsed && !statusState) {
       // First-time initialize
       localStorage.setItem(SHARED_APP_STORAGE_KEY, JSON.stringify(INITIAL_APPLICATION));
+      localStorage.setItem(
+        SHARED_APP_STATUS_KEY,
+        JSON.stringify({
+          status: INITIAL_APPLICATION.adminStatus,
+          verificationStatus: INITIAL_APPLICATION.verificationStatus,
+          isVerified: INITIAL_APPLICATION.isVerified,
+          currentStage: INITIAL_APPLICATION.currentStage,
+        })
+      );
       return INITIAL_APPLICATION;
     }
-    const parsed = JSON.parse(raw);
-    // Ensure vital fields exist
+
+    const effectiveStatusRaw = statusState?.status || parsed?.status || INITIAL_APPLICATION.status;
+    const normalized = normalizeStatus(effectiveStatusRaw);
+    const adminLabel = statusToAdminLabel(normalized);
+
+    let isVerified = statusState?.isVerified ?? parsed?.isVerified ?? false;
+    let verificationStatus: "Verified" | "Pending" | "Not Verified" =
+      statusState?.verificationStatus ?? parsed?.verificationStatus ?? "Pending";
+    let currentStage: number = statusState?.currentStage ?? parsed?.currentStage ?? 2;
+
+    if (normalized === "approved") {
+      isVerified = true;
+      verificationStatus = "Verified";
+      currentStage = 4;
+    } else if (normalized === "rejected") {
+      isVerified = false;
+      verificationStatus = "Not Verified";
+      currentStage = 2;
+    } else if (normalized === "needs-correction") {
+      isVerified = false;
+      verificationStatus = "Pending";
+      currentStage = 2;
+    } else if (normalized === "draft" || normalized === "submitted") {
+      isVerified = false;
+      verificationStatus = "Pending";
+      currentStage = 1;
+    } else {
+      isVerified = false;
+      verificationStatus = "Pending";
+      currentStage = 2;
+    }
+
     return {
       ...INITIAL_APPLICATION,
-      ...parsed,
+      ...(parsed || {}),
       vendor: {
         ...INITIAL_APPLICATION.vendor,
-        ...(parsed.vendor || {}),
+        ...(parsed?.vendor || {}),
       },
       business: {
         ...INITIAL_APPLICATION.business,
-        ...(parsed.business || {}),
+        ...(parsed?.business || {}),
       },
-      status: normalizeStatus(parsed.status),
-      adminStatus: statusToAdminLabel(parsed.status),
+      status: normalized,
+      adminStatus: adminLabel,
+      verificationStatus,
+      isVerified,
+      currentStage,
     };
   } catch (err) {
     console.error("Failed to parse shared application from storage:", err);
@@ -537,6 +618,15 @@ export function saveSharedApplication(updated: SharedApplication): SharedApplica
   if (typeof window !== "undefined") {
     try {
       localStorage.setItem(SHARED_APP_STORAGE_KEY, JSON.stringify(updated));
+      localStorage.setItem(
+        SHARED_APP_STATUS_KEY,
+        JSON.stringify({
+          status: updated.adminStatus,
+          verificationStatus: updated.verificationStatus,
+          isVerified: updated.isVerified,
+          currentStage: updated.currentStage,
+        })
+      );
       window.dispatchEvent(
         new CustomEvent<SharedApplication>(APP_UPDATED_EVENT, { detail: updated })
       );
@@ -562,6 +652,32 @@ export function setApplicationStatus(
       ? options.adminRemarks
       : current.adminRemarks;
 
+  let verificationStatus: "Verified" | "Pending" | "Not Verified" = "Pending";
+  let isVerified = false;
+  let currentStage = 2;
+
+  if (normalized === "approved") {
+    verificationStatus = "Verified";
+    isVerified = true;
+    currentStage = 4;
+  } else if (normalized === "rejected") {
+    verificationStatus = "Not Verified";
+    isVerified = false;
+    currentStage = 2;
+  } else if (normalized === "needs-correction") {
+    verificationStatus = "Pending";
+    isVerified = false;
+    currentStage = 2;
+  } else if (normalized === "draft" || normalized === "submitted") {
+    verificationStatus = "Pending";
+    isVerified = false;
+    currentStage = 1;
+  } else {
+    verificationStatus = "Pending";
+    isVerified = false;
+    currentStage = 2;
+  }
+
   // Create an activity entry
   let activityTitle = `Status updated to ${adminLabel}`;
   let activityDesc = `Application status changed to ${adminLabel}.`;
@@ -569,8 +685,8 @@ export function setApplicationStatus(
   let dotColor: ActivityEntry["dotColor"] = "blue";
 
   if (normalized === "approved") {
-    activityTitle = "Application Approved";
-    activityDesc = "Administrator approved the vendor registration.";
+    activityTitle = "Application Approved & Verified";
+    activityDesc = "Administrator approved the vendor application. Identity and business verified.";
     activityType = "approval";
     dotColor = "emerald";
   } else if (normalized === "needs-correction") {
@@ -607,6 +723,9 @@ export function setApplicationStatus(
     ...current,
     status: normalized,
     adminStatus: adminLabel,
+    verificationStatus,
+    isVerified,
+    currentStage,
     updatedAt: nowStamp,
     lastUpdatedText: `Updated ${nowStamp}`,
     adminRemarks: remarks,
@@ -645,6 +764,7 @@ export function setApplicationRemarks(remarks: string): SharedApplication {
 export function resetSharedApplication(): SharedApplication {
   if (typeof window !== "undefined") {
     localStorage.removeItem(SHARED_APP_STORAGE_KEY);
+    localStorage.removeItem(SHARED_APP_STATUS_KEY);
     lastRaw = null;
     cachedSnapshot = { ...INITIAL_APPLICATION };
   }
@@ -717,6 +837,9 @@ export function useSharedApplication() {
     application: app,
     status: app.status,
     adminStatus: app.adminStatus,
+    verificationStatus: app.verificationStatus,
+    isVerified: app.isVerified,
+    currentStage: app.currentStage,
     adminRemarks: app.adminRemarks,
     vendorId: app.vendorId,
     updateStatus,
