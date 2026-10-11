@@ -41,28 +41,29 @@ export function HeadingReveal({ className }: HeadingRevealProps) {
         className || ""
       }`}
     >
-      <span className="inline-block">
-        <motion.span variants={itemVariants} className="inline-block mr-[0.25em]">
+      <span>
+        <motion.span variants={itemVariants} className="inline-block align-baseline">
           Register
-        </motion.span>
-        <motion.span variants={itemVariants} className="inline-block mr-[0.25em]">
+        </motion.span>{" "}
+        <motion.span variants={itemVariants} className="inline-block align-baseline">
           Your
-        </motion.span>
-        <motion.span variants={itemVariants} className="inline-block mr-[0.25em]">
+        </motion.span>{" "}
+        <br className="sm:hidden" />
+        <motion.span variants={itemVariants} className="inline-block align-baseline">
           Business
         </motion.span>
       </span>{" "}
-      <br className="hidden sm:inline" />
-      <span className="inline-block">
-        <motion.span variants={itemVariants} className="inline-block mr-[0.25em]">
+      <br />
+      <span>
+        <motion.span variants={itemVariants} className="inline-block align-baseline">
           in
-        </motion.span>
+        </motion.span>{" "}
         <motion.span
           variants={itemVariants}
-          className="inline-block relative text-[#155EEF] underline decoration-blue-300 decoration-wavy decoration-2 underline-offset-8"
+          className="inline-block align-baseline relative text-[#155EEF] underline decoration-blue-300 decoration-wavy decoration-2 underline-offset-8"
         >
           <ShinyText
-            text="Butuan"
+            text="Butuan City"
             className="text-[#155EEF]"
             shimmerColor="rgba(255, 255, 255, 0.9)"
             speed={3.5}

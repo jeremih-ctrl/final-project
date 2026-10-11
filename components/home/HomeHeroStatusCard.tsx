@@ -1,176 +1,288 @@
 "use client";
 
+import { useMemo } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import {
-  Building2,
+  BarChart3,
+  Users,
+  FileText,
   CheckCircle2,
+  Percent,
   Clock,
-  CircleDot,
-  User,
-  Calendar,
-  MapPin,
   ArrowRight,
   ShieldCheck,
+  Info,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { CardContent, CardFooter } from "@/components/ui/card";
 import { TiltedCard } from "@/components/reactbits/TiltedCard";
 import { SpotlightCard } from "@/components/reactbits/SpotlightCard";
+import {
+  useStoredApplications,
+  useDeletedApplicationIds,
+  isDemoOrMockApplication,
+} from "@/lib/application-store";
+import { VendorApplication } from "@/lib/types/vendor-application";
 
 export function HomeHeroStatusCard() {
+  const storedApplications = useStoredApplications();
+  const deletedApplicationIds = useDeletedApplicationIds();
+
+  // Filter out mock/demo records, invalid entries, and deleted records
+  const genuineApplications: VendorApplication[] = useMemo(() => {
+    const hasDeleted = deletedApplicationIds.length > 0;
+    const deletedSet = hasDeleted
+      ? new Set(deletedApplicationIds.map((id) => id.trim().toLowerCase()))
+      : null;
+    const seen = new Set<string>();
+    const list: VendorApplication[] = [];
+
+    for (const app of storedApplications) {
+      if (isDemoOrMockApplication(app)) continue;
+      const normId = (app.applicationNumber || app.id || "").trim().toLowerCase();
+      if (!normId || seen.has(normId) || (deletedSet && deletedSet.has(normId))) continue;
+      seen.add(normId);
+      list.push(app);
+    }
+    return list;
+  }, [storedApplications, deletedApplicationIds]);
+
+  // 1. Total Genuine Applications
+  const totalApplicationsCount = genuineApplications.length;
+
+  // 2. Total Unique Registered Vendors (grouped separately by vendor identity)
+  const uniqueVendorsCount = useMemo(() => {
+    const set = new Set<string>();
+    genuineApplications.forEach((app) => {
+      const key = (
+        app.vendorId ||
+        app.contact?.emailAddress ||
+        app.owner?.ownerName ||
+        app.id
+      )
+        .trim()
+        .toLowerCase();
+      if (key) set.add(key);
+    });
+    return set.size;
+  }, [genuineApplications]);
+
+  // 3. Accepted (Approved) Applications
+  const acceptedApplicationsCount = useMemo(() => {
+    return genuineApplications.filter(
+      (app) =>
+        app.status?.toLowerCase() === "approved" ||
+        app.verificationStatus === "Verified"
+    ).length;
+  }, [genuineApplications]);
+
+  // 4. Acceptance Rate
+  const acceptanceRate =
+    totalApplicationsCount > 0
+      ? (acceptedApplicationsCount / totalApplicationsCount) * 100
+      : null;
+
+  // 5. Average Approval Time (calculated strictly with genuine timestamps)
+  const avgApprovalTimeFormatted = useMemo(() => {
+    const durationsMs: number[] = [];
+
+    genuineApplications.forEach((app) => {
+      const isApproved =
+        app.status?.toLowerCase() === "approved" ||
+        app.verificationStatus === "Verified";
+      if (!isApproved) return;
+
+      const subTime = app.submittedAt ? new Date(app.submittedAt).getTime() : NaN;
+      if (isNaN(subTime)) return;
+
+      let appTime = NaN;
+      if (app.statusHistory && app.statusHistory.length > 0) {
+        const historyItem = app.statusHistory.find(
+          (h) =>
+            (h.newStatus?.toLowerCase() === "approved" ||
+              h.action?.toLowerCase().includes("approved")) &&
+            h.timestamp
+        );
+        if (historyItem?.timestamp) {
+          appTime = new Date(historyItem.timestamp).getTime();
+        }
+      }
+      if (isNaN(appTime) && app.updatedAt) {
+        appTime = new Date(app.updatedAt).getTime();
+      }
+
+      if (!isNaN(appTime) && appTime >= subTime) {
+        durationsMs.push(appTime - subTime);
+      }
+    });
+
+    if (durationsMs.length === 0) return null;
+    const avgMs = durationsMs.reduce((a, b) => a + b, 0) / durationsMs.length;
+
+    if (avgMs < 60 * 1000) return "< 1 min";
+    if (avgMs < 60 * 60 * 1000) return `${Math.max(1, Math.round(avgMs / (60 * 1000)))} mins`;
+    if (avgMs < 24 * 60 * 60 * 1000) return `${(avgMs / (60 * 60 * 1000)).toFixed(1)} hrs`;
+    return `${(avgMs / (24 * 60 * 60 * 1000)).toFixed(1)} days`;
+  }, [genuineApplications]);
+
   return (
-    <div className="relative w-full max-w-md mx-auto">
+    <div className="relative w-full max-w-sm sm:max-w-md mx-auto">
       {/* Ambient Radial Blue/Teal Civic Glows Behind the Card */}
-      <div className="absolute -inset-4 bg-gradient-to-tr from-blue-600/20 via-sky-400/15 to-emerald-400/10 rounded-3xl blur-2xl opacity-70 pointer-events-none" />
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-72 h-72 rounded-full bg-[#155EEF]/15 blur-3xl pointer-events-none" />
+      <div className="absolute -inset-3 bg-gradient-to-tr from-blue-600/15 via-sky-400/10 to-emerald-400/10 rounded-3xl blur-xl opacity-70 pointer-events-none" />
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 rounded-full bg-[#155EEF]/10 blur-2xl pointer-events-none" />
 
       {/* Floating Micro-Animation on the Entire Card */}
       <motion.div
-        animate={{ y: [0, -6, 0] }}
+        animate={{ y: [0, -4, 0] }}
         transition={{
-          duration: 6,
+          duration: 5,
           repeat: Infinity,
           ease: "easeInOut",
         }}
       >
-        <TiltedCard maxTilt={8} scale={1.015} className="w-full">
+        <TiltedCard maxTilt={5} scale={1.01} className="w-full">
           <SpotlightCard
-            spotlightColor="rgba(21, 94, 239, 0.16)"
-            className="border-slate-200/90 shadow-xl rounded-2xl overflow-hidden bg-white/95 backdrop-blur-xl ring-1 ring-slate-950/5"
+            spotlightColor="rgba(21, 94, 239, 0.12)"
+            className="border-slate-200/90 shadow-lg rounded-2xl overflow-hidden bg-white/95 backdrop-blur-xl ring-1 ring-slate-950/5 text-slate-800"
           >
-            {/* Top Status Card Header - Civic Dark Header */}
-            <div className="bg-[#0B1A30] text-white px-5 py-4 flex items-center justify-between border-b border-slate-800">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-blue-500/20 border border-blue-400/30 flex items-center justify-center text-blue-300 shadow-inner">
-                  <Building2 className="w-4 h-4" />
+            {/* Top Dashboard Header - Civic Navy Header */}
+            <div className="bg-[#0B1A30] text-white px-4 py-3 sm:px-5 sm:py-3.5 flex items-center justify-between border-b border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-blue-500/20 border border-blue-400/30 flex items-center justify-center text-blue-300 shadow-inner shrink-0">
+                  <BarChart3 className="w-4 h-4" />
                 </div>
                 <div>
-                  <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                    <span>Application Status</span>
-                    <span className="w-1 h-1 rounded-full bg-slate-500" />
-                    <span className="text-blue-400">Live Preview</span>
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-blue-400 leading-tight">
+                    BUTUAN LGU IMPACT
                   </div>
-                  <div className="font-mono font-bold text-sm tracking-wider text-white">
-                    BVR-2026-001248
+                  <div className="font-semibold text-xs sm:text-sm tracking-wide text-white leading-tight">
+                    Vendor Registration Overview
                   </div>
                 </div>
               </div>
 
-              {/* Pulsing Status Badge */}
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-400/30 shadow-xs">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-400" />
-                </span>
-                Under Review
+              {/* Public Statistics indicator */}
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-blue-500/15 text-blue-300 border border-blue-400/25 shadow-2xs shrink-0">
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-400 inline-block" />
+                Public Statistics
               </span>
             </div>
 
-            {/* Card Body: Sample Registered Vendor Information */}
-            <CardContent className="p-5 space-y-4">
-              <div className="bg-slate-50/90 border border-slate-200/80 rounded-xl p-3.5 space-y-2.5 transition-colors hover:bg-blue-50/30">
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <span className="text-[11px] font-medium uppercase tracking-wider text-slate-500 block">
-                      Registered Business
+            {/* Card Body: Essential Aggregate Statistics */}
+            <CardContent className="p-3.5 sm:p-4 space-y-3">
+              {/* 1. Overall Statistics Grid (2x2) */}
+              <div className="grid grid-cols-2 gap-2 sm:gap-2.5">
+                {/* Total Registered Vendors */}
+                <div className="p-2.5 sm:p-3 rounded-xl bg-slate-50/90 border border-slate-200/80 hover:bg-blue-50/30 transition-colors">
+                  <div className="flex items-center justify-between text-slate-500 mb-0.5">
+                    <span className="text-[10px] font-medium uppercase tracking-wider text-slate-500">
+                      Vendors
                     </span>
-                    <h4 className="font-bold text-[#0F1E36] text-base leading-snug">
-                      Montilla Street Produce & Snacks
-                    </h4>
+                    <Users className="w-3.5 h-3.5 text-blue-600" />
                   </div>
-                  <Badge
-                    variant="outline"
-                    className="text-[11px] bg-white text-blue-700 border-blue-200 font-semibold shrink-0"
-                  >
-                    Food / Retail
-                  </Badge>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2 text-xs text-slate-600 pt-1 border-t border-slate-200/60">
-                  <div className="flex items-center gap-1.5">
-                    <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                    <span className="truncate font-medium">Maria Santos</span>
+                  <div className="text-lg sm:text-xl font-extrabold text-slate-900 tracking-tight leading-snug">
+                    {uniqueVendorsCount}
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                    <span>Oct 6, 2026</span>
+                  <div className="text-[10px] text-slate-500 font-medium leading-tight">
+                    Total Registered Vendors
                   </div>
                 </div>
 
-                <div className="flex items-start gap-1.5 text-xs text-slate-600 pt-0.5">
-                  <MapPin className="w-3.5 h-3.5 text-[#155EEF] shrink-0 mt-0.5" />
-                  <span className="line-clamp-1">Barangay Urduja, Butuan City</span>
+                {/* Applications Received */}
+                <div className="p-2.5 sm:p-3 rounded-xl bg-slate-50/90 border border-slate-200/80 hover:bg-blue-50/30 transition-colors">
+                  <div className="flex items-center justify-between text-slate-500 mb-0.5">
+                    <span className="text-[10px] font-medium uppercase tracking-wider text-slate-500">
+                      Applications
+                    </span>
+                    <FileText className="w-3.5 h-3.5 text-indigo-600" />
+                  </div>
+                  <div className="text-lg sm:text-xl font-extrabold text-slate-900 tracking-tight leading-snug">
+                    {totalApplicationsCount}
+                  </div>
+                  <div className="text-[10px] text-slate-500 font-medium leading-tight">
+                    Applications Received
+                  </div>
+                </div>
+
+                {/* Accepted Applications */}
+                <div className="p-2.5 sm:p-3 rounded-xl bg-slate-50/90 border border-slate-200/80 hover:bg-emerald-50/30 transition-colors">
+                  <div className="flex items-center justify-between text-slate-500 mb-0.5">
+                    <span className="text-[10px] font-medium uppercase tracking-wider text-slate-500">
+                      Accepted
+                    </span>
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                  </div>
+                  <div className="text-lg sm:text-xl font-extrabold text-slate-900 tracking-tight leading-snug">
+                    {acceptedApplicationsCount}
+                  </div>
+                  <div className="text-[10px] text-slate-500 font-medium leading-tight">
+                    Accepted Applications
+                  </div>
+                </div>
+
+                {/* Acceptance Rate */}
+                <div className="p-2.5 sm:p-3 rounded-xl bg-slate-50/90 border border-slate-200/80 hover:bg-sky-50/30 transition-colors">
+                  <div className="flex items-center justify-between text-slate-500 mb-0.5">
+                    <span className="text-[10px] font-medium uppercase tracking-wider text-slate-500">
+                      Rate
+                    </span>
+                    <Percent className="w-3.5 h-3.5 text-sky-600" />
+                  </div>
+                  <div className="text-lg sm:text-xl font-extrabold text-slate-900 tracking-tight leading-snug">
+                    {acceptanceRate !== null ? `${acceptanceRate.toFixed(1)}%` : "0.0%"}
+                  </div>
+                  <div className="text-[10px] text-slate-500 font-medium leading-tight">
+                    Acceptance Rate
+                  </div>
                 </div>
               </div>
 
-              {/* Visual Tracker Steps with Micro-Animations */}
-              <div className="space-y-2.5 pt-0.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold uppercase tracking-wider text-slate-600">
-                    Application Progress
-                  </span>
-                  <span className="text-[11px] text-slate-500 font-mono">Stage 2 of 3</span>
-                </div>
-
-                <div className="space-y-2">
-                  {/* Step 1: Completed */}
-                  <motion.div
-                    whileHover={{ x: 2 }}
-                    className="flex items-center justify-between text-xs p-2.5 rounded-lg bg-emerald-50/80 border border-emerald-200/70 text-emerald-950 font-medium transition-all"
-                  >
-                    <div className="flex items-center gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                      <span>1. Registration Form Submitted</span>
+              {/* 2. Average Approval Time Banner */}
+              <div className="p-2.5 sm:p-3 rounded-xl bg-gradient-to-r from-slate-50 to-amber-50/30 border border-slate-200/80 flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-md bg-amber-500/15 border border-amber-400/30 flex items-center justify-center text-amber-700 shrink-0">
+                    <Clock className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <div className="text-[11px] font-semibold text-slate-700 leading-tight">
+                      Average Approval Time
                     </div>
-                    <span className="text-[11px] text-emerald-700 font-bold bg-white/80 px-2 py-0.5 rounded-full border border-emerald-200">
-                      Done
-                    </span>
-                  </motion.div>
-
-                  {/* Step 2: Under Review (Active) */}
-                  <motion.div
-                    whileHover={{ x: 2 }}
-                    className="flex items-center justify-between text-xs p-2.5 rounded-lg bg-amber-50/95 border border-amber-300 text-amber-950 font-medium shadow-2xs"
-                  >
-                    <div className="flex items-center gap-2">
-                      <Clock className="w-4 h-4 text-amber-600 shrink-0 animate-pulse" />
-                      <span className="font-semibold text-amber-950">
-                        2. LGU Administrative Review
+                    <div className="text-[9.5px] text-slate-500 leading-tight">
+                      Elapsed from submission to decision
+                    </div>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="font-bold text-slate-900 text-xs">
+                    {avgApprovalTimeFormatted !== null ? (
+                      avgApprovalTimeFormatted
+                    ) : (
+                      <span className="text-slate-500 font-normal italic text-[11px]">
+                        Data unavailable
                       </span>
-                    </div>
-                    <span className="text-[11px] text-amber-800 font-bold bg-amber-100/80 px-2 py-0.5 rounded-full border border-amber-300">
-                      In Progress
-                    </span>
-                  </motion.div>
-
-                  {/* Step 3: Pending */}
-                  <motion.div
-                    whileHover={{ x: 2 }}
-                    className="flex items-center justify-between text-xs p-2.5 rounded-lg bg-slate-50/80 border border-slate-200/60 text-slate-400"
-                  >
-                    <div className="flex items-center gap-2">
-                      <CircleDot className="w-4 h-4 text-slate-400 shrink-0" />
-                      <span>3. Vendor Certificate Issuance</span>
-                    </div>
-                    <span className="text-[11px] text-slate-400 font-medium">Pending</span>
-                  </motion.div>
+                    )}
+                  </div>
+                  {avgApprovalTimeFormatted === null && (
+                    <div className="text-[9.5px] text-slate-400 leading-tight">Not enough data</div>
+                  )}
                 </div>
+              </div>
+
+              {/* Data Scope Note */}
+              <div className="flex items-center gap-1.5 text-[10px] text-slate-500 px-0.5 pt-0.5">
+                <Info className="w-3 h-3 text-slate-400 shrink-0" />
+                <span>*Based on records available in this system.</span>
               </div>
             </CardContent>
 
-            {/* Card Footer: Live Notification Mock with Action */}
-            <CardFooter className="bg-slate-50/90 border-t border-slate-200/70 px-5 py-3.5 flex items-center justify-between text-xs text-slate-600">
-              <span className="flex items-center gap-2">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
-                </span>
-                <span className="font-medium text-slate-700">Real-time tracking active</span>
+            {/* Card Footer: Official Portal Link */}
+            <CardFooter className="bg-slate-50/90 border-t border-slate-200/70 px-4 py-2.5 sm:px-5 sm:py-2.5 flex items-center justify-between text-xs text-slate-600">
+              <span className="font-medium text-slate-600 text-[11px]">
+                Have a reference number?
               </span>
               <Link
                 href="/application-status"
-                className="font-bold text-[#155EEF] hover:text-[#1048b8] hover:underline flex items-center gap-1.5 group cursor-pointer"
+                className="font-bold text-[#155EEF] hover:text-[#1048b8] hover:underline flex items-center gap-1.5 group cursor-pointer text-xs"
               >
                 <span>Track Status</span>
                 <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" />
@@ -180,11 +292,14 @@ export function HomeHeroStatusCard() {
         </TiltedCard>
 
         {/* Floating Mini Badge below the card */}
-        <div className="mt-3.5 flex items-center justify-center gap-2 text-xs text-slate-500">
-          <ShieldCheck className="w-4 h-4 text-[#155EEF]" />
-          <span>Official LGU Digital Verification Workflow</span>
+        <div className="mt-2.5 flex items-center justify-center gap-1.5 text-[11px] text-slate-500">
+          <ShieldCheck className="w-3.5 h-3.5 text-[#155EEF]" />
+          <span>Official Butuan City Public Market & Vendor Registry</span>
         </div>
       </motion.div>
     </div>
   );
 }
+
+// Alias export for clarity
+export { HomeHeroStatusCard as LguImpactDashboard };

@@ -36,6 +36,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   // Validation state
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
@@ -69,6 +70,9 @@ export default function LoginPage() {
   const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setEmail(val);
+    if (authError) {
+      setAuthError(null);
+    }
     if (touched.email) {
       setErrors((prev) => ({ ...prev, email: validateEmail(val) }));
     }
@@ -77,6 +81,9 @@ export default function LoginPage() {
   const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setPassword(val);
+    if (authError) {
+      setAuthError(null);
+    }
     if (touched.password) {
       setErrors((prev) => ({ ...prev, password: validatePassword(val) }));
     }
@@ -92,8 +99,11 @@ export default function LoginPage() {
     setErrors((prev) => ({ ...prev, password: validatePassword(password) }));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
+
+    setAuthError(null);
 
     const emailErr = validateEmail(email);
     const passErr = validatePassword(password);
@@ -107,25 +117,51 @@ export default function LoginPage() {
 
     setIsSubmitting(true);
 
-    // Save demo vendor session
-    const storedApps = getApplications();
-    const foundApp = storedApps.find(
-      (a) => a.contact.emailAddress.toLowerCase() === email.trim().toLowerCase()
-    );
-    const emailPrefix = email.split("@")[0].replace(/[._-]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-    const resolvedName = foundApp?.owner.ownerName || emailPrefix || "Registered Vendor";
+    try {
+      const res = await fetch("/api/auth/vendor/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: email.trim(),
+          password,
+        }),
+      });
 
-    setVendorSession({
-      email: email.trim(),
-      name: resolvedName,
-      role: "Local Vendor",
-    });
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        setAuthError(
+          errorData.error || "Invalid email or password. Please check your credentials and try again."
+        );
+        setIsSubmitting(false);
+        return;
+      }
 
-    // Frontend demo sign-in transition
-    setTimeout(() => {
-      setIsSubmitting(false);
+      const data = await res.json();
+      const user = data.user || {};
+
+      // Match with stored application for enriched profile name if available
+      const storedApps = getApplications();
+      const foundApp = storedApps.find(
+        (a) => a.contact.emailAddress.toLowerCase() === email.trim().toLowerCase()
+      );
+      const emailPrefix = email.split("@")[0].replace(/[._-]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+      const resolvedName = foundApp?.owner.ownerName || user.name || emailPrefix || "Registered Vendor";
+
+      setVendorSession({
+        email: email.trim(),
+        name: resolvedName,
+        role: "Local Vendor",
+      });
+
       router.push("/dashboard");
-    }, 400);
+    } catch (err) {
+      console.error("Login authentication request failed:", err);
+      setAuthError("Invalid email or password. Please check your credentials and try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleForgotSubmit = (e: React.FormEvent) => {
@@ -175,6 +211,16 @@ export default function LoginPage() {
         {/* Login Form Card */}
         <Card className="shadow-md border-slate-200 bg-white rounded-2xl overflow-hidden">
           <CardContent className="p-6 sm:p-8 space-y-5">
+            {authError && (
+              <div
+                role="alert"
+                aria-live="polite"
+                className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-xs sm:text-sm flex items-start gap-2.5 animate-in fade-in"
+              >
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" aria-hidden="true" />
+                <span className="font-medium">{authError}</span>
+              </div>
+            )}
             <form onSubmit={handleSubmit} noValidate className="space-y-4">
               {/* Email Address Field */}
               <div className="space-y-1.5">

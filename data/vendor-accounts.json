@@ -1,0 +1,44 @@
+[
+  {
+    "email": "test.vendor.1791685507434@example.com",
+    "name": "Juan Santos",
+    "salt": "c96ab170f37c065a3925f8426b8a006a",
+    "hash": "83b266f66a27a312785208962241042e4616641cae74e444e4271013726969c22303ad8798a8298d2ef5e79a15f0987a2ab49408b8246913ba74fa20d7e7cd6e",
+    "createdAt": "2026-10-11T02:25:07.469Z"
+  },
+  {
+    "email": "api.vendor.1791685513681@test.com",
+    "name": "Maria Clara",
+    "salt": "431080ea1cf131bd537d540578a76e40",
+    "hash": "bd17c26f0d3d43e96d8237ded1400ea8fd842b0b3bfd0688528e4c7d5deb084687553e83c2acada0717ae0eff39255e2edad9590c4056482bb84fa23c8124d21",
+    "createdAt": "2026-10-11T02:25:13.720Z"
+  },
+  {
+    "email": "testvendor@example.com",
+    "name": "Test Owner",
+    "salt": "b927e5e0395fed1a813aa6744c4751b7",
+    "hash": "3ee0fe03a51ce677d1e451bce9b7ed8f9db842818361604705c31ea231d8a252527317671d7f072a9173d0732d2c7ebf6346225251b025f69ccd22d990da0c2d",
+    "createdAt": "2026-10-11T04:39:42.571Z"
+  },
+  {
+    "email": "jeremygomez12344@gmail.com",
+    "name": "JEREMY GOMEZ",
+    "salt": "135df7ee0c4e9038eef113672846e696",
+    "hash": "b343d74dd81aefc81023efbef060d3d043122790417effa2ec034c8a3628bd152ccae7b56cfc7d3221da560076e6521de64fc77a7a0fe74dae67302e6f33f45a",
+    "createdAt": "2026-10-11T04:44:58.040Z"
+  },
+  {
+    "email": "irish123@gmail.com",
+    "name": "Irish relleta",
+    "salt": "0472a75d5437d005bbf46309c92c2ade",
+    "hash": "2c5c4bedf09579a54be0fd0770b6c4bcd1a884f8fdb7dabe5aaa77bda8c3a8571fad2be16b388b292f1ab108e37c3156dff6c5c53a9f6ecc69c18699cdc1c872",
+    "createdAt": "2026-10-11T09:02:50.315Z"
+  },
+  {
+    "email": "nena1234@gmail.com",
+    "name": "Nena M. Alcantara",
+    "salt": "f2d0cfa1806b4442e65b693ecdc6ec6c",
+    "hash": "5a722cc8b3d16b2f58bd0336a71ed6baeea7a029fea670b3a189d26729161c014b7c13159e7c48a6d447671fec5aa010aefc42b2b6b7239cf07618418df2827b",
+    "createdAt": "2026-10-11T10:27:43.956Z"
+  }
+]

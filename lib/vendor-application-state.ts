@@ -14,6 +14,7 @@ import {
   INITIAL_VENDOR_NOTIFICATIONS,
   VendorNotification,
 } from "./notifications-data";
+import { PaymentInformation, PaymentStatus } from "./types/vendor-application";
 
 // ─── Status Types ─────────────────────────────────────────────────────────────
 
@@ -137,6 +138,15 @@ export interface SharedApplication {
   province: string;
   region: string;
   country: string;
+
+  // Payment information
+  payment?: PaymentInformation;
+  paymentStatus?: PaymentStatus;
+  assessedAmount?: number;
+  amountPaid?: number;
+  paymentMethod?: string;
+  transactionReference?: string;
+  paymentDate?: string | null;
 }
 
 /** Legacy interface alias for backwards compatibility */
@@ -277,6 +287,34 @@ export const INITIAL_APPLICATION: SharedApplication = {
   province: "Agusan del Norte",
   region: "Caraga",
   country: "Philippines",
+
+  payment: {
+    status: "pending",
+    assessedAmount: 1450,
+    amountPaid: 0,
+    currency: "PHP",
+    paymentMethod: "Maya",
+    paymentMethodCategory: "e_wallet",
+    transactionReference: "PAY-BVR-2026-001248",
+    paymentDate: null,
+    assessmentStatus: "assessed",
+    assessmentNotes: "Itemized regulatory fees assessed under Butuan City Tax Ordinance No. 132.",
+    feeBreakdown: [
+      { id: "mayors-permit", name: "Mayor's Permit / Local Business Registration", description: "CBPLD municipal authorization", amount: 500, isRegulatory: true },
+      { id: "barangay-clearance", name: "Barangay Clearance Regulatory Fee", description: "Consolidated barangay clearance via City BOSS", amount: 100, isRegulatory: true },
+      { id: "sanitary-inspection", name: "Sanitary Inspection & Health Clearance Fee", description: "City Health Office annual inspection", amount: 250, isRegulatory: true },
+      { id: "zoning-clearance", name: "Zoning & Locational Clearance Fee", description: "CPDO locational clearance", amount: 200, isRegulatory: true },
+      { id: "fire-safety-inspection", name: "Annual Fire Safety Inspection Fee", description: "Bureau of Fire Protection regulatory fee", amount: 200, isRegulatory: true },
+      { id: "solid-waste-enro", name: "City Garbage & Solid Waste Environmental Fee", description: "City ENRO solid waste compliance fee", amount: 200, isRegulatory: true },
+    ],
+    gatewayProvider: "Maya (Butuan City E-TRACS Partner)",
+  },
+  paymentStatus: "pending",
+  assessedAmount: 1450,
+  amountPaid: 0,
+  paymentMethod: "Maya",
+  transactionReference: "PAY-BVR-2026-001248",
+  paymentDate: null,
 };
 
 /** Alias for existing code expecting MOCK_VENDOR_APPLICATION */

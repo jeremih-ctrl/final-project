@@ -26,9 +26,12 @@ import {
   Calendar,
   HelpCircle,
   XCircle,
+  CreditCard,
+  Receipt,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSharedApplication } from "@/lib/vendor-application-state";
+import { formatPhpCurrency, getPaymentStatusBadgeConfig } from "@/lib/payment-fee-schedule";
 
 export type DashboardStatus =
   | "draft"
@@ -96,6 +99,11 @@ export default function DashboardPage() {
   const isSubmitted = demoStatus === "submitted";
   const isDraft = demoStatus === "draft";
   const isRejected = demoStatus === "rejected";
+
+  const paymentInfo = application.payment;
+  const paymentBadge = getPaymentStatusBadgeConfig(paymentInfo?.status || "unpaid");
+  const assessedAmount = paymentInfo?.assessedAmount ?? 650;
+  const amountPaid = paymentInfo?.amountPaid ?? 0;
 
   const handleCopyAppNumber = () => {
     if (typeof navigator !== "undefined" && navigator.clipboard) {
@@ -357,6 +365,101 @@ export default function DashboardPage() {
         </div>
       </header>
 
+      {/* 2b. Payment Proof Rejected Banner (Priority Alert) */}
+      {paymentInfo?.status === "rejected" && (
+        <section
+          aria-label="Payment rejection notice"
+          className="rounded-2xl bg-rose-50/95 border-2 border-rose-300 p-5 sm:p-6 shadow-xs space-y-4"
+        >
+          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+            <div className="flex items-start gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 border border-rose-300 text-rose-700 flex items-center justify-center shrink-0 mt-0.5">
+                <Receipt className="w-5 h-5 stroke-[2.5]" />
+              </div>
+              <div className="space-y-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-rose-900 bg-rose-200/80 px-2 py-0.5 rounded">
+                    Payment Action Required
+                  </span>
+                  <span className="text-xs text-rose-800 font-medium">
+                    Proof of Payment Rejected
+                  </span>
+                </div>
+                <h2 className="text-base sm:text-lg font-bold text-rose-950">
+                  Payment Proof Rejected by Administrator
+                </h2>
+                <p className="text-xs sm:text-sm text-rose-900 leading-relaxed max-w-3xl">
+                  {paymentInfo.rejectionReason ? (
+                    <>
+                      Administrator Remarks / Reason: <strong className="font-semibold">&ldquo;{paymentInfo.rejectionReason}&rdquo;</strong>
+                    </>
+                  ) : (
+                    "The administrator reviewed your uploaded receipt and could not verify it. Please upload a clear and valid receipt or transaction screenshot."
+                  )}
+                </p>
+                <p className="text-xs text-rose-800">
+                  Please review the official payment instructions, ensure the reference number matches, and upload a corrected receipt.
+                </p>
+              </div>
+            </div>
+
+            <Link
+              href="/application-status"
+              className={cn(
+                buttonVariants({ variant: "default", size: "default" }),
+                "bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs sm:text-sm cursor-pointer gap-2 shrink-0 self-start sm:self-center shadow-xs"
+              )}
+            >
+              <Receipt className="w-4 h-4" />
+              <span>Resubmit Payment Proof</span>
+            </Link>
+          </div>
+        </section>
+      )}
+
+      {/* 2c. Unpaid Notice if no receipt uploaded yet */}
+      {paymentInfo?.status === "unpaid" && !isApproved && !isRejected && (
+        <section
+          aria-label="Payment submission notice"
+          className="rounded-2xl bg-amber-50/90 border-2 border-amber-300 p-5 sm:p-6 shadow-xs space-y-3"
+        >
+          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+            <div className="flex items-start gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-amber-100 border border-amber-300 text-amber-700 flex items-center justify-center shrink-0 mt-0.5">
+                <CreditCard className="w-5 h-5 stroke-[2.5]" />
+              </div>
+              <div className="space-y-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-amber-900 bg-amber-200/80 px-2 py-0.5 rounded">
+                    Payment Pending
+                  </span>
+                  <span className="text-xs text-amber-800 font-medium">
+                    Assessed Fee: {formatPhpCurrency(assessedAmount)}
+                  </span>
+                </div>
+                <h2 className="text-base sm:text-lg font-bold text-amber-950">
+                  Proof of Payment Required
+                </h2>
+                <p className="text-xs sm:text-sm text-amber-900 leading-relaxed max-w-3xl">
+                  Please transfer payment to <strong>LGU BUTUAN (09674382253)</strong> or via Bank Transfer, then upload your receipt so administrators can verify your payment.
+                </p>
+              </div>
+            </div>
+
+            <Link
+              href="/application-status"
+              className={cn(
+                buttonVariants({ variant: "default", size: "sm" }),
+                "bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shrink-0 self-start sm:self-center shadow-xs gap-1.5"
+              )}
+            >
+              <Receipt className="w-3.5 h-3.5" />
+              <span>Upload Proof of Payment</span>
+            </Link>
+          </div>
+        </section>
+      )}
+
       {/* 3. Vendor Dashboard Access Notice (Pending vs Approved) */}
       {!isApproved && !isNeedsCorrection && !isRejected && (
         <section
@@ -577,7 +680,7 @@ export default function DashboardPage() {
       )}
 
       {/* 4. KPI Summary Cards */}
-      <section aria-label="Registration key metrics" className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      <section aria-label="Registration key metrics" className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
         {/* Card 1: Application Status */}
         <Card
           className={cn(
@@ -628,7 +731,55 @@ export default function DashboardPage() {
           </div>
         </Card>
 
-        {/* Card 2: Verification Status */}
+        {/* Card 2: Payment Status */}
+        <Card
+          className={cn(
+            "shadow-2xs rounded-xl p-4 sm:p-5 flex flex-col justify-between transition-all border",
+            paymentInfo?.status === "rejected"
+              ? "border-rose-300 bg-rose-50/30"
+              : paymentInfo?.status === "verified"
+              ? "border-emerald-300 bg-emerald-50/20"
+              : paymentInfo?.status === "pending_verification"
+              ? "border-blue-300 bg-blue-50/20"
+              : "border-slate-200 bg-white"
+          )}
+        >
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+              Payment Status
+            </span>
+            <div
+              className={cn(
+                "w-7 h-7 rounded-lg flex items-center justify-center",
+                paymentInfo?.status === "rejected"
+                  ? "bg-rose-100 text-rose-700"
+                  : paymentInfo?.status === "verified"
+                  ? "bg-emerald-100 text-emerald-700"
+                  : paymentInfo?.status === "pending_verification"
+                  ? "bg-blue-100 text-blue-700"
+                  : "bg-slate-100 text-slate-700"
+              )}
+            >
+              <CreditCard className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <Badge className={cn("text-xs font-extrabold uppercase px-2.5 py-1 tracking-wide border", paymentBadge.badgeClass)}>
+              {paymentBadge.label}
+            </Badge>
+            <p className="text-[11px] text-slate-500 block pt-0.5">
+              {paymentInfo?.status === "verified"
+                ? `Verified: ${formatPhpCurrency(amountPaid || assessedAmount)}`
+                : paymentInfo?.status === "rejected"
+                ? "Receipt rejected • Resubmit"
+                : paymentInfo?.status === "pending_verification"
+                ? "Under admin review"
+                : `Assessed: ${formatPhpCurrency(assessedAmount)}`}
+            </p>
+          </div>
+        </Card>
+
+        {/* Card 3: Verification Status */}
         <Card
           className={cn(
             "shadow-2xs rounded-xl p-4 sm:p-5 flex flex-col justify-between transition-all",
@@ -826,6 +977,121 @@ export default function DashboardPage() {
                   </Link>
                 </div>
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Fee Assessment & Payment Overview Card */}
+          <Card className="bg-white border border-slate-200/90 rounded-2xl shadow-xs overflow-hidden">
+            <CardHeader className="p-5 pb-3 border-b border-slate-100 flex flex-row items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CreditCard className="w-4 h-4 text-blue-700" />
+                <CardTitle className="text-base font-bold text-slate-900">
+                  Fee Assessment &amp; Payment Status
+                </CardTitle>
+              </div>
+              <Badge className={cn("text-xs font-bold border", paymentBadge.badgeClass)}>
+                {paymentBadge.label}
+              </Badge>
+            </CardHeader>
+            <CardContent className="p-5 sm:p-6 space-y-4">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 p-3 rounded-xl bg-slate-50 border border-slate-200/80 text-xs">
+                <div>
+                  <span className="text-[11px] text-slate-400 block font-medium">Assessed Amount</span>
+                  <span className="font-extrabold text-slate-900 text-sm">{formatPhpCurrency(assessedAmount)}</span>
+                </div>
+                <div>
+                  <span className="text-[11px] text-slate-400 block font-medium">Confirmed Paid</span>
+                  <span className={cn("font-extrabold text-sm", amountPaid > 0 ? "text-emerald-700" : "text-slate-800")}>
+                    {formatPhpCurrency(amountPaid)}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[11px] text-slate-400 block font-medium">Payment Channel</span>
+                  <span className="font-semibold text-slate-800 truncate block">
+                    {paymentInfo?.methodName || "City Hall Cashier / Maya"}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[11px] text-slate-400 block font-medium">Assessment Ref</span>
+                  <span className="font-mono font-bold text-blue-700 truncate block">
+                    {paymentInfo?.transactionReference || `PAY-${vendor.applicationNumber}`}
+                  </span>
+                </div>
+              </div>
+
+              {/* Status Specific Notice */}
+              {paymentInfo?.status === "rejected" && (
+                <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-xs space-y-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <span className="font-bold text-rose-900 flex items-center gap-1.5">
+                      <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                      Payment Proof Rejected by Administrator
+                    </span>
+                    <Link
+                      href="/application-status"
+                      className="text-xs font-bold text-rose-700 hover:text-rose-900 bg-white border border-rose-300 px-2.5 py-1 rounded-md shadow-2xs inline-flex items-center gap-1 self-start sm:self-auto"
+                    >
+                      <span>Resubmit Proof Now</span>
+                      <ArrowRight className="w-3 h-3" />
+                    </Link>
+                  </div>
+                  <p className="text-rose-800">
+                    Administrator Reason: &ldquo;{paymentInfo.rejectionReason || "Uploaded receipt could not be verified. Please submit a valid transaction screenshot."}&rdquo;
+                  </p>
+                </div>
+              )}
+
+              {paymentInfo?.status === "pending_verification" && (
+                <div className="p-3.5 rounded-xl bg-blue-50 border border-blue-200 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 text-blue-900">
+                    <Clock className="w-4 h-4 text-blue-600 shrink-0" />
+                    <span>Receipt submitted on {paymentInfo?.receiptUploadedAt || "record"}. Awaiting administrative verification before registration approval.</span>
+                  </div>
+                  <Link
+                    href="/application-status"
+                    className="text-xs font-semibold text-blue-700 hover:text-blue-900 shrink-0 inline-flex items-center gap-1"
+                  >
+                    <span>View Receipt</span>
+                    <ArrowRight className="w-3 h-3" />
+                  </Link>
+                </div>
+              )}
+
+              {paymentInfo?.status === "verified" && (
+                <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 text-emerald-900">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>Payment verified {paymentInfo.verifiedBy ? `by ${paymentInfo.verifiedBy}` : "by City Licensing Evaluator"} on {paymentInfo.verifiedAt || "record"}.</span>
+                  </div>
+                  <Badge className="bg-emerald-100 text-emerald-900 border-emerald-300 font-bold shrink-0">
+                    ✓ Verified Official Payment
+                  </Badge>
+                </div>
+              )}
+
+              {(!paymentInfo?.status || paymentInfo?.status === "unpaid") && (
+                <div className="p-3.5 rounded-xl bg-amber-50/70 border border-amber-200/80 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-1.5 font-bold text-amber-950">
+                      <Receipt className="w-3.5 h-3.5 text-amber-700" />
+                      <span>Proof of Payment Needed</span>
+                    </div>
+                    <p className="text-amber-900 text-[11px]">
+                      Transfer to LGU Butuan E-Wallet (09674382253) or Bank Transfer and upload receipt proof.
+                    </p>
+                  </div>
+                  <Link
+                    href="/application-status"
+                    className={cn(
+                      buttonVariants({ variant: "outline", size: "sm" }),
+                      "text-xs font-semibold bg-white text-amber-800 border-amber-300 hover:bg-amber-50 shrink-0 cursor-pointer"
+                    )}
+                  >
+                    <span>Upload Proof</span>
+                    <ArrowRight className="w-3.5 h-3.5 ml-1" />
+                  </Link>
+                </div>
+              )}
             </CardContent>
           </Card>
 

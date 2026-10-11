@@ -25,12 +25,19 @@ import {
   Award,
   Sparkles,
   Trash2,
+  Receipt,
+  Wallet,
+  Download,
+  ExternalLink,
+  FileCheck,
+  ShieldCheck,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -54,10 +61,14 @@ import {
   deleteAdminApplicationRecord,
 } from "@/lib/application-store";
 import { type AdminApplication } from "@/lib/admin-applications-data";
-import { VendorApplication, ApplicationStatus } from "@/lib/types/vendor-application";
+import { VendorApplication, ApplicationStatus, PaymentInformation } from "@/lib/types/vendor-application";
 import {
   addVendorNotification,
 } from "@/lib/notifications-data";
+import {
+  formatPhpCurrency,
+  getPaymentStatusBadgeConfig,
+} from "@/lib/payment-fee-schedule";
 
 let activityCounter = 1000;
 function nextActivityId(): string {
@@ -116,6 +127,31 @@ export interface ReviewApplicationState {
     description: string;
     type: "submission" | "review" | "correction" | "approval" | "rejection";
   }>;
+  // Fee assessment & payment information
+  payment?: PaymentInformation;
+  paymentStatus:
+    | "Unpaid"
+    | "Pending Verification"
+    | "Verified"
+    | "Rejected"
+    | "Pending"
+    | "Paid"
+    | "Failed"
+    | "Cancelled"
+    | "Refunded";
+  assessedAmount: number;
+  amountPaid: number;
+  paymentMethod: string;
+  transactionReference: string;
+  paymentDate: string | null;
+  receiptUrl?: string;
+  receiptFilename?: string;
+  receiptFileType?: string;
+  receiptFileSize?: number;
+  receiptUploadedAt?: string;
+  rejectionReason?: string;
+  verifiedBy?: string;
+  verifiedAt?: string;
 }
 
 function parseAppStatus(status?: string): ApplicationStatus {
@@ -320,7 +356,37 @@ function mapVendorAppToReviewState(
               type: "submission",
             },
           ],
+    payment: stored.payment,
+    paymentStatus: formatAdminPaymentStatus(stored.payment?.status),
+    assessedAmount: stored.payment?.assessedAmount ?? 1450,
+    amountPaid: stored.payment?.amountPaid ?? 0,
+    paymentMethod: stored.payment?.paymentMethod || "Maya / CTO Cashier",
+    transactionReference: stored.payment?.transactionReference || `PAY-${stored.applicationNumber || stored.id}`,
+    paymentDate: stored.payment?.paymentDate || null,
+    receiptUrl: stored.payment?.receiptUrl,
+    receiptFilename: stored.payment?.receiptFilename,
+    receiptFileType: stored.payment?.receiptFileType,
+    receiptFileSize: stored.payment?.receiptFileSize,
+    receiptUploadedAt: stored.payment?.receiptUploadedAt,
+    rejectionReason: stored.payment?.rejectionReason,
+    verifiedBy: stored.payment?.verifiedBy,
+    verifiedAt: stored.payment?.verifiedAt,
   };
+}
+
+function formatAdminPaymentStatus(status?: string): ReviewApplicationState["paymentStatus"] {
+  if (!status) return "Unpaid";
+  const s = status.toLowerCase().trim().replace(/[\s-]+/g, "_");
+  if (s === "pending_verification") return "Pending Verification";
+  if (s === "verified") return "Verified";
+  if (s === "rejected") return "Rejected";
+  if (s === "paid") return "Verified";
+  if (s === "pending") return "Pending Verification";
+  if (s === "unpaid") return "Unpaid";
+  if (s === "failed") return "Failed";
+  if (s === "cancelled") return "Cancelled";
+  if (s === "refunded") return "Refunded";
+  return "Unpaid";
 }
 
 function createEmptyReviewState(appId: string): ReviewApplicationState {
@@ -362,6 +428,12 @@ function createEmptyReviewState(appId: string): ReviewApplicationState {
       governmentId: false,
     },
     activity: [],
+    paymentStatus: "Unpaid",
+    assessedAmount: 1450,
+    amountPaid: 0,
+    paymentMethod: "Maya / CTO Cashier",
+    transactionReference: `PAY-${appId}`,
+    paymentDate: null,
   };
 }
 
@@ -471,6 +543,24 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
 
   const resolvedBase = baseReviewState || createEmptyReviewState(applicationId);
 
+  const [localPaymentOverride, setLocalPaymentOverride] = useState<{
+    status: ReviewApplicationState["paymentStatus"];
+    verifiedBy?: string;
+    verifiedAt?: string;
+    rejectionReason?: string;
+    amountPaid?: number;
+  } | null>(null);
+
+  const [verifyPaymentDialogOpen, setVerifyPaymentDialogOpen] = useState(false);
+  const [rejectPaymentDialogOpen, setRejectPaymentDialogOpen] = useState(false);
+  const [receiptViewerModalOpen, setReceiptViewerModalOpen] = useState(false);
+  const [paymentRejectionReason, setPaymentRejectionReason] = useState(
+    "Uploaded receipt is unclear or transaction reference does not match municipal records."
+  );
+  const [confirmedAmountPaidInput, setConfirmedAmountPaidInput] = useState<string>("");
+  const [reviewerAdminInput, setReviewerAdminInput] = useState<string>("Admin (CBPLD Review Officer)");
+  const [verifyCheckReceiptAcknowledged, setVerifyCheckReceiptAcknowledged] = useState(true);
+
   const appState: ReviewApplicationState = {
     ...resolvedBase,
     status: effectiveStatus,
@@ -500,7 +590,46 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
               | "rejection",
           }))
         : resolvedBase.activity),
+    paymentStatus:
+      localPaymentOverride?.status ||
+      (isSharedTarget && sharedApp.paymentStatus
+        ? formatAdminPaymentStatus(sharedApp.paymentStatus)
+        : resolvedBase.paymentStatus),
+    amountPaid:
+      localPaymentOverride?.amountPaid ??
+      (isSharedTarget && sharedApp.payment?.amountPaid !== undefined
+        ? sharedApp.payment.amountPaid
+        : resolvedBase.amountPaid),
+    rejectionReason:
+      localPaymentOverride?.rejectionReason ??
+      (isSharedTarget ? sharedApp.payment?.rejectionReason : resolvedBase.rejectionReason),
+    verifiedBy:
+      localPaymentOverride?.verifiedBy ??
+      (isSharedTarget ? sharedApp.payment?.verifiedBy : resolvedBase.verifiedBy),
+    verifiedAt:
+      localPaymentOverride?.verifiedAt ??
+      (isSharedTarget ? sharedApp.payment?.verifiedAt : resolvedBase.verifiedAt),
+    receiptUrl:
+      resolvedBase.receiptUrl ||
+      (isSharedTarget ? sharedApp.payment?.receiptUrl : undefined),
+    receiptFilename:
+      resolvedBase.receiptFilename ||
+      (isSharedTarget ? sharedApp.payment?.receiptFilename : undefined),
+    receiptFileType:
+      resolvedBase.receiptFileType ||
+      (isSharedTarget ? sharedApp.payment?.receiptFileType : undefined),
+    receiptFileSize:
+      resolvedBase.receiptFileSize ||
+      (isSharedTarget ? sharedApp.payment?.receiptFileSize : undefined),
+    receiptUploadedAt:
+      resolvedBase.receiptUploadedAt ||
+      (isSharedTarget ? sharedApp.payment?.receiptUploadedAt : undefined),
   };
+
+  const isPaymentVerified =
+    appState.paymentStatus === "Verified" ||
+    (appState.paymentStatus as string).toLowerCase() === "verified" ||
+    (appState.paymentStatus as string).toLowerCase() === "paid";
 
   // Dialog and form inputs
   const [approveDialogOpen, setApproveDialogOpen] = useState(false);
@@ -532,13 +661,22 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
     }, 5000);
   };
 
-  // Direct status override handler (Requirement 5)
+  // Direct status override handler (Requirement 5 & CRITICAL APPROVAL RULE)
   const handleAdminStatusChange = (newStatus: string) => {
     const adminLabel = statusToAdminLabel(newStatus) as ReviewApplicationState["status"];
     const match = appState.applicationNumber.match(/(\d+)$/);
     const seq = match ? match[1] : "001248";
     const dynamicVendorId = `BUT-V-${seq}`;
     const isNowApproved = newStatus.toLowerCase() === "approved";
+
+    // CRITICAL ENFORCEMENT: An application must NOT be approved until payment is Verified
+    if (isNowApproved && !isPaymentVerified) {
+      showNotification(
+        `Approval Blocked: Payment must be verified by an authorized administrator before this application can be approved. (Current Status: ${appState.paymentStatus})`,
+        "destructive"
+      );
+      return;
+    }
 
     updateApplication(appState.applicationNumber, {
       status: parseAppStatus(newStatus),
@@ -564,6 +702,172 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
       `Status updated to "${adminLabel}" and synchronized to Vendor Portal.`,
       "success"
     );
+  };
+
+  // Payment Verification Actions
+  const handleVerifyPaymentConfirm = () => {
+    const nowIso = new Date().toISOString();
+    const formattedDate = new Date().toLocaleDateString("en-US", {
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    });
+    const amountToConfirm =
+      Number(confirmedAmountPaidInput) || appState.amountPaid || appState.assessedAmount || 1450;
+    const reviewerAdmin = reviewerAdminInput.trim() || "Admin (CBPLD Review Officer)";
+
+    const updatedPayment: PaymentInformation = {
+      assessedAmount: appState.assessedAmount,
+      currency: "PHP",
+      paymentMethod: appState.paymentMethod,
+      transactionReference: appState.transactionReference,
+      feeBreakdown: appState.payment?.feeBreakdown || [],
+      assessmentStatus: "pending_verification",
+      receiptUrl: appState.receiptUrl,
+      receiptFilename: appState.receiptFilename,
+      receiptFileType: appState.receiptFileType,
+      receiptFileSize: appState.receiptFileSize,
+      receiptUploadedAt: appState.receiptUploadedAt,
+      ...(appState.payment || {}),
+      status: "verified",
+      amountPaid: amountToConfirm,
+      paymentDate: appState.paymentDate || formattedDate,
+      verifiedBy: reviewerAdmin,
+      verifiedAt: nowIso,
+      rejectionReason: undefined,
+    };
+
+    const verifyActivity = {
+      id: nextActivityId(),
+      title: "Payment Verified",
+      date: formattedDate,
+      description: `Payment of ${formatPhpCurrency(amountToConfirm)} via ${appState.paymentMethod} verified by ${reviewerAdmin}. Transaction reference: ${appState.transactionReference}.`,
+      type: "review" as const,
+    };
+
+    updateApplication(appState.applicationNumber, {
+      payment: updatedPayment,
+      paymentStatus: "verified",
+      amountPaid: amountToConfirm,
+    });
+
+    if (isSharedTarget) {
+      saveSharedApplication({
+        ...sharedApp,
+        payment: updatedPayment,
+        paymentStatus: "verified",
+        amountPaid: amountToConfirm,
+      });
+    }
+
+    addVendorNotification({
+      type: "application-status-updated",
+      title: "Payment Verified",
+      message: `Your payment of ${formatPhpCurrency(amountToConfirm)} for application ${appState.applicationNumber} has been verified by the administrator.`,
+      fullMessage: `Your payment of ${formatPhpCurrency(amountToConfirm)} (Ref: ${appState.transactionReference}) has been verified by ${reviewerAdmin}. Your vendor registration application is continuing under formal CBPLD administrative evaluation. Note: Verified payment does not automatically approve the registration.`,
+      applicationNumber: appState.applicationNumber,
+      vendorName: appState.businessName,
+      status: appState.status,
+      actionLabel: "View Application",
+      actionUrl: "/application-status",
+      href: "/application-status",
+      priority: "normal",
+    });
+
+    setLocalPaymentOverride({
+      status: "Verified",
+      verifiedBy: reviewerAdmin,
+      verifiedAt: nowIso,
+      amountPaid: amountToConfirm,
+      rejectionReason: undefined,
+    });
+    setLocalActivityOverride([verifyActivity, ...appState.activity]);
+    setVerifyPaymentDialogOpen(false);
+    showNotification("Payment verified successfully. Application is now eligible for approval review.", "success");
+  };
+
+  const handleRejectPaymentConfirm = () => {
+    if (!paymentRejectionReason.trim()) {
+      showNotification("Please provide a rejection reason for the payment proof.", "warning");
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    const formattedDate = new Date().toLocaleDateString("en-US", {
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    });
+    const reviewerAdmin = "Admin (CBPLD Review Officer)";
+    const reason = paymentRejectionReason.trim();
+
+    const updatedPayment: PaymentInformation = {
+      assessedAmount: appState.assessedAmount,
+      currency: "PHP",
+      paymentMethod: appState.paymentMethod,
+      transactionReference: appState.transactionReference,
+      feeBreakdown: appState.payment?.feeBreakdown || [],
+      assessmentStatus: "pending_verification",
+      receiptUrl: appState.receiptUrl,
+      receiptFilename: appState.receiptFilename,
+      receiptFileType: appState.receiptFileType,
+      receiptFileSize: appState.receiptFileSize,
+      receiptUploadedAt: appState.receiptUploadedAt,
+      ...(appState.payment || {}),
+      status: "rejected",
+      amountPaid: 0,
+      rejectionReason: reason,
+      verifiedBy: reviewerAdmin,
+      verifiedAt: nowIso,
+    };
+
+    const rejectPaymentActivity = {
+      id: nextActivityId(),
+      title: "Payment Proof Rejected",
+      date: formattedDate,
+      description: `Payment proof rejected by ${reviewerAdmin}. Reason: "${reason}". Vendor must resubmit corrected proof.`,
+      type: "rejection" as const,
+    };
+
+    updateApplication(appState.applicationNumber, {
+      payment: updatedPayment,
+      paymentStatus: "rejected",
+      amountPaid: 0,
+    });
+
+    if (isSharedTarget) {
+      saveSharedApplication({
+        ...sharedApp,
+        payment: updatedPayment,
+        paymentStatus: "rejected",
+        amountPaid: 0,
+      });
+    }
+
+    addVendorNotification({
+      type: "application-status-updated",
+      title: "Payment Proof Rejected — Resubmission Required",
+      message: `Your proof of payment for application ${appState.applicationNumber} was rejected: "${reason}". Please upload a corrected receipt.`,
+      fullMessage: `Your payment receipt for application ${appState.applicationNumber} was reviewed and rejected by ${reviewerAdmin}. Reason: "${reason}". Please log in to your vendor portal or visit the status page to resubmit a valid proof of payment.`,
+      applicationNumber: appState.applicationNumber,
+      vendorName: appState.businessName,
+      status: appState.status,
+      actionLabel: "Resubmit Payment Proof",
+      actionUrl: "/application-status",
+      href: "/application-status",
+      priority: "high",
+    });
+
+    setLocalPaymentOverride({
+      status: "Rejected",
+      verifiedBy: reviewerAdmin,
+      verifiedAt: nowIso,
+      rejectionReason: reason,
+      amountPaid: 0,
+    });
+    setLocalActivityOverride([rejectPaymentActivity, ...appState.activity]);
+    setRejectPaymentDialogOpen(false);
+    showNotification("Payment proof rejected. Rejection reason has been communicated to the vendor.", "warning");
   };
 
   // Direct remark save handler
@@ -626,6 +930,16 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
 
   // 2. Approve Behavior
   const handleApproveConfirm = () => {
+    // CRITICAL APPROVAL RULE: An application must NOT be approved until payment has been verified
+    if (!isPaymentVerified) {
+      showNotification(
+        `Approval Blocked: Payment must be verified by an authorized administrator before this application can be approved. (Current Payment Status: ${appState.paymentStatus})`,
+        "destructive"
+      );
+      setApproveDialogOpen(false);
+      return;
+    }
+
     setChecklist({
       businessInfo: true,
       ownerInfo: true,
@@ -1248,14 +1562,50 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
                     <span>Reject</span>
                   </Button>
 
-                  <Button
-                    size="sm"
-                    onClick={() => setApproveDialogOpen(true)}
-                    className="text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 cursor-pointer gap-1.5 h-9 rounded-xl shadow-2xs"
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>Approve</span>
-                  </Button>
+                  <div className="flex items-center gap-1.5">
+                    <Button
+                      size="sm"
+                      disabled={!isPaymentVerified}
+                      onClick={() => {
+                        if (!isPaymentVerified) {
+                          showNotification(
+                            `Payment verification is required before approval. Current payment status is ${appState.paymentStatus}.`,
+                            "destructive"
+                          );
+                          return;
+                        }
+                        setApproveDialogOpen(true);
+                      }}
+                      className={cn(
+                        "text-xs font-semibold gap-1.5 h-9 rounded-xl shadow-2xs",
+                        isPaymentVerified
+                          ? "text-white bg-emerald-600 hover:bg-emerald-700 cursor-pointer"
+                          : "bg-slate-200 text-slate-500 cursor-not-allowed hover:bg-slate-200"
+                      )}
+                      title={
+                        isPaymentVerified
+                          ? "Approve application"
+                          : `Approval blocked: payment status is ${appState.paymentStatus}`
+                      }
+                    >
+                      {isPaymentVerified ? (
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                      ) : (
+                        <Lock className="w-3.5 h-3.5 text-slate-500" />
+                      )}
+                      <span>Approve</span>
+                    </Button>
+                    {!isPaymentVerified && (
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] font-semibold bg-amber-50 text-amber-800 border-amber-300 hidden sm:inline-flex items-center gap-1 py-1"
+                        title="Payment must be verified by an administrator before approval"
+                      >
+                        <Lock className="w-2.5 h-2.5 text-amber-600" />
+                        Payment Unverified
+                      </Badge>
+                    )}
+                  </div>
                 </>
               ) : appState.status === "Approved" ? (
                 <div className="px-3.5 py-2 rounded-xl bg-emerald-100/90 border border-emerald-300 text-emerald-950 text-xs font-bold flex items-center gap-2 shadow-2xs">
@@ -1581,6 +1931,321 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
                   <p className="text-blue-900 text-xs">{appState.remarks}</p>
                 </div>
               )}
+            </CardContent>
+          </Card>
+
+          {/* Fee Assessment & Payment Details Card */}
+          <Card className="bg-white border border-slate-200/90 rounded-2xl shadow-xs overflow-hidden">
+            <CardHeader className="p-5 pb-3 border-b border-slate-100 flex flex-row items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center">
+                  <Receipt className="w-4 h-4" />
+                </div>
+                <CardTitle className="text-base font-bold text-slate-900">
+                  Fee Assessment & Payment Verification
+                </CardTitle>
+              </div>
+              <Badge
+                variant="outline"
+                className={cn("text-xs font-semibold", getPaymentStatusBadgeConfig(appState.paymentStatus).badgeClass)}
+              >
+                <span className={cn("inline-block w-1.5 h-1.5 rounded-full mr-1.5", getPaymentStatusBadgeConfig(appState.paymentStatus).dotColor)} />
+                {appState.paymentStatus}
+              </Badge>
+            </CardHeader>
+
+            <CardContent className="p-5 space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1">
+                  <span className="text-[11px] text-slate-500 font-medium block uppercase">
+                    Assessed Fee Total
+                  </span>
+                  <p className="text-base font-mono font-extrabold text-blue-700">
+                    {formatPhpCurrency(appState.assessedAmount)}
+                  </p>
+                  <span className="text-[10px] text-slate-400 block">Per City Tax Ord. No. 132</span>
+                </div>
+
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1">
+                  <span className="text-[11px] text-slate-500 font-medium block uppercase">
+                    Confirmed Amount Paid
+                  </span>
+                  <p className="text-base font-mono font-extrabold text-slate-900">
+                    {formatPhpCurrency(appState.amountPaid)}
+                  </p>
+                  <span className="text-[10px] text-slate-400 block">
+                    {isPaymentVerified ? "Verified with LGU account" : "Awaiting admin confirmation"}
+                  </span>
+                </div>
+
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1">
+                  <span className="text-[11px] text-slate-500 font-medium block uppercase">
+                    Payment Method
+                  </span>
+                  <p className="text-sm font-bold text-slate-900 truncate">
+                    {appState.paymentMethod || "Maya / CTO Cashier"}
+                  </p>
+                  <span className="text-[10px] text-slate-400 block">Selected payment channel</span>
+                </div>
+
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1">
+                  <span className="text-[11px] text-slate-500 font-medium block uppercase">
+                    Assessment Reference
+                  </span>
+                  <p className="text-xs font-mono font-bold text-slate-900 truncate">
+                    {appState.transactionReference}
+                  </p>
+                  <span className="text-[10px] text-slate-400 block">CTO Payment Tracking Code</span>
+                </div>
+              </div>
+
+              {/* Status Specific Alerts */}
+              {appState.paymentStatus === "Verified" ? (
+                <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-950 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <ShieldCheck className="w-4 h-4 text-emerald-700 shrink-0" />
+                    <div>
+                      <span className="font-bold text-emerald-900 block">
+                        Payment Verified by Administrator
+                      </span>
+                      <span className="text-[11px] text-emerald-800">
+                        Verified by <strong>{appState.verifiedBy || "CBPLD Treasury Officer"}</strong> on{" "}
+                        {appState.verifiedAt
+                          ? new Date(appState.verifiedAt).toLocaleDateString("en-US", {
+                              month: "long",
+                              day: "numeric",
+                              year: "numeric",
+                            })
+                          : appState.paymentDate || "Recorded session"}
+                        . Confirmed amount: {formatPhpCurrency(appState.amountPaid || appState.assessedAmount)}.
+                      </span>
+                    </div>
+                  </div>
+                  <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 self-start sm:self-auto shrink-0 font-semibold text-[11px]">
+                    Verified
+                  </Badge>
+                </div>
+              ) : appState.paymentStatus === "Rejected" ? (
+                <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-300 text-xs text-rose-950 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 font-bold text-rose-900">
+                      <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                      <span>Payment Proof Rejected</span>
+                    </div>
+                    <Badge className="bg-rose-100 text-rose-800 border-rose-300 text-[11px] font-semibold">
+                      Rejected
+                    </Badge>
+                  </div>
+                  <p className="text-[11px] text-rose-900 font-medium leading-relaxed pl-6">
+                    <strong>Rejection Reason:</strong> &ldquo;{appState.rejectionReason || "Uploaded receipt could not be verified or transaction reference is missing."}&rdquo;
+                  </p>
+                  <span className="text-[10px] text-rose-700 block pl-6">
+                    The vendor has been notified and can submit a corrected proof of payment through their portal.
+                  </span>
+                </div>
+              ) : appState.paymentStatus === "Pending Verification" ? (
+                <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-300 text-xs text-amber-950 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <Clock className="w-4 h-4 text-amber-700 shrink-0" />
+                    <div>
+                      <span className="font-bold text-amber-900 block">
+                        Payment Proof Awaiting Admin Review
+                      </span>
+                      <span className="text-[11px] text-amber-800">
+                        Vendor has submitted proof of payment. Please inspect the receipt below and confirm against municipal accounts before approving this registration.
+                      </span>
+                    </div>
+                  </div>
+                  <Badge className="bg-amber-100 text-amber-900 border-amber-300 self-start sm:self-auto shrink-0 font-semibold text-[11px]">
+                    Pending Verification
+                  </Badge>
+                </div>
+              ) : (
+                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-300 text-xs text-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <AlertCircle className="w-4 h-4 text-slate-600 shrink-0" />
+                    <div>
+                      <span className="font-bold text-slate-900 block">
+                        No Proof of Payment Submitted
+                      </span>
+                      <span className="text-[11px] text-slate-600">
+                        Vendor has not yet submitted proof of payment for assessment reference {appState.transactionReference}.
+                      </span>
+                    </div>
+                  </div>
+                  <Badge className="bg-slate-100 text-slate-800 border-slate-300 self-start sm:self-auto shrink-0 font-semibold text-[11px]">
+                    Unpaid
+                  </Badge>
+                </div>
+              )}
+
+              {/* Uploaded Proof of Payment Area */}
+              <div className="p-4 rounded-xl border border-slate-200/90 bg-slate-50/70 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Receipt className="w-4 h-4 text-blue-700" />
+                    <span className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                      Uploaded Proof of Payment
+                    </span>
+                  </div>
+                  {appState.receiptUploadedAt && (
+                    <span className="text-[11px] text-slate-500">
+                      Uploaded {appState.receiptUploadedAt}
+                    </span>
+                  )}
+                </div>
+
+                {appState.receiptUrl ? (
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-xl bg-white border border-slate-200">
+                    <div className="flex items-center gap-3 min-w-0">
+                      {appState.receiptFileType?.includes("pdf") || (appState.receiptFilename && appState.receiptFilename.toLowerCase().endsWith(".pdf")) ? (
+                        <div className="w-12 h-12 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center font-bold text-xs shrink-0 shadow-2xs">
+                          PDF
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setReceiptViewerModalOpen(true)}
+                          className="w-12 h-12 rounded-xl border border-slate-200 overflow-hidden shrink-0 bg-slate-100 cursor-pointer hover:opacity-85 transition-opacity"
+                          title="Click to view full receipt"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={appState.receiptUrl}
+                            alt="Receipt Thumbnail"
+                            className="w-full h-full object-cover"
+                          />
+                        </button>
+                      )}
+                      <div className="min-w-0 space-y-0.5">
+                        <p className="text-xs font-bold text-slate-900 truncate font-mono">
+                          {appState.receiptFilename || "payment-receipt-document"}
+                        </p>
+                        <p className="text-[11px] text-slate-500">
+                          {appState.receiptFileType || "Image / Document"} •{" "}
+                          {appState.receiptFileSize
+                            ? `${(appState.receiptFileSize / 1024).toFixed(0)} KB`
+                            : "Verified attachment"}{" "}
+                          • Ref: <span className="font-mono font-semibold text-slate-700">{appState.transactionReference}</span>
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setReceiptViewerModalOpen(true)}
+                        className="text-xs font-semibold h-8 px-3 rounded-lg cursor-pointer text-blue-700 border-blue-200 hover:bg-blue-50"
+                      >
+                        <Eye className="w-3.5 h-3.5 mr-1" />
+                        View Receipt
+                      </Button>
+                      <a
+                        href={appState.receiptUrl}
+                        download={appState.receiptFilename || `receipt-${appState.applicationNumber}.jpg`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={cn(
+                          buttonVariants({ variant: "outline", size: "sm" }),
+                          "text-xs font-semibold h-8 px-3 rounded-lg text-slate-700 border-slate-300 hover:bg-slate-100 gap-1"
+                        )}
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        Download
+                      </a>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-4 rounded-xl bg-white border border-dashed border-slate-300 text-center space-y-1.5">
+                    <AlertCircle className="w-5 h-5 text-slate-400 mx-auto" />
+                    <p className="text-xs font-semibold text-slate-700">
+                      No Receipt File Uploaded Yet
+                    </p>
+                    <p className="text-[11px] text-slate-500">
+                      The vendor selected {appState.paymentMethod || "payment channel"} with reference #{appState.transactionReference}, but has not uploaded proof of payment.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Itemized Regulatory Fees */}
+              {appState.payment?.feeBreakdown && appState.payment.feeBreakdown.length > 0 && (
+                <div className="space-y-2 pt-1">
+                  <span className="text-xs font-bold text-slate-800 block">
+                    Itemized Regulatory Fee Assessment:
+                  </span>
+                  <div className="divide-y divide-slate-100 rounded-xl border border-slate-200/80 overflow-hidden text-xs">
+                    {appState.payment.feeBreakdown.map((fee) => (
+                      <div key={fee.id} className="p-2.5 px-3 flex items-center justify-between bg-white hover:bg-slate-50/50">
+                        <div className="space-y-0.5">
+                          <span className="font-semibold text-slate-900 block">{fee.name}</span>
+                          <span className="text-[11px] text-slate-500 block">{fee.description}</span>
+                        </div>
+                        <span className="font-mono font-bold text-slate-900 shrink-0">
+                          {formatPhpCurrency(fee.amount)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Critical Rule Callout */}
+              <div className="p-3.5 rounded-xl bg-blue-50/70 border border-blue-200 text-xs text-blue-950 space-y-1">
+                <div className="flex items-center gap-1.5 font-bold text-blue-900">
+                  <ShieldCheck className="w-4 h-4 text-blue-700 shrink-0" />
+                  <span>Critical Rule — Payment Verification Precedes Approval:</span>
+                </div>
+                <p className="text-blue-900/90 leading-relaxed text-[11px]">
+                  An application cannot be approved or accepted until payment has been verified by an authorized administrator. Payment verification is strictly separate from permit approval: a verified payment confirms municipal fee settlement, but does not automatically approve the vendor registration.
+                </p>
+              </div>
+
+              {/* Explicit Admin Action Buttons */}
+              <div className="pt-2 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                <div className="text-xs text-slate-600">
+                  <span className="font-semibold text-slate-700">Admin Payment Review:</span>
+                  <span className="ml-1 text-slate-500">
+                    {isPaymentVerified
+                      ? "Payment is verified. Registration approval can proceed if checklist is complete."
+                      : "Review receipt above and verify or reject before deciding on approval."}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setRejectPaymentDialogOpen(true)}
+                    className="text-rose-700 border-rose-300 hover:bg-rose-50 hover:text-rose-800 text-xs font-semibold h-9 px-3.5 rounded-xl cursor-pointer"
+                  >
+                    <XCircle className="w-3.5 h-3.5 mr-1.5 text-rose-600" />
+                    Reject Payment Proof
+                  </Button>
+
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={isPaymentVerified}
+                    onClick={() => {
+                      setConfirmedAmountPaidInput(String(appState.amountPaid || appState.assessedAmount));
+                      setVerifyPaymentDialogOpen(true);
+                    }}
+                    className={cn(
+                      "text-xs font-bold h-9 px-4 rounded-xl cursor-pointer shadow-xs text-white",
+                      isPaymentVerified
+                        ? "bg-slate-300 cursor-not-allowed opacity-75"
+                        : "bg-emerald-600 hover:bg-emerald-700"
+                    )}
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5 mr-1.5" />
+                    {isPaymentVerified ? "Payment Verified" : "Verify Payment"}
+                  </Button>
+                </div>
+              </div>
             </CardContent>
           </Card>
 
@@ -2150,7 +2815,9 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
                     <option value="Under Review">Under Review</option>
                     <option value="Needs Correction">Needs Correction</option>
                     <option value="Correction Submitted">Correction Submitted</option>
-                    <option value="Approved">Approved</option>
+                    <option value="Approved" disabled={!isPaymentVerified}>
+                      {!isPaymentVerified ? "Approved (Payment Verification Required)" : "Approved"}
+                    </option>
                     <option value="Rejected">Rejected</option>
                   </select>
                 </div>
@@ -2203,12 +2870,48 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
                 <div className="space-y-2.5 pt-1">
                   <Button
                     type="button"
-                    onClick={() => setApproveDialogOpen(true)}
-                    className="w-full h-11 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm cursor-pointer gap-2 rounded-xl shadow-xs"
+                    disabled={!isPaymentVerified}
+                    onClick={() => {
+                      if (!isPaymentVerified) {
+                        showNotification(
+                          `Approval Blocked: Payment must be verified by an administrator before this application can be approved. (Current: ${appState.paymentStatus})`,
+                          "destructive"
+                        );
+                        return;
+                      }
+                      setApproveDialogOpen(true);
+                    }}
+                    className={cn(
+                      "w-full h-11 font-bold text-sm cursor-pointer gap-2 rounded-xl shadow-xs",
+                      isPaymentVerified
+                        ? "bg-emerald-600 hover:bg-emerald-700 text-white"
+                        : "bg-slate-200 text-slate-500 cursor-not-allowed hover:bg-slate-200"
+                    )}
+                    title={
+                      isPaymentVerified
+                        ? "Approve application"
+                        : `Approval blocked: payment status is ${appState.paymentStatus}`
+                    }
                   >
-                    <CheckCircle2 className="w-4 h-4" />
+                    {!isPaymentVerified ? (
+                      <Lock className="w-4 h-4 text-slate-500" />
+                    ) : (
+                      <CheckCircle2 className="w-4 h-4" />
+                    )}
                     <span>Approve Application</span>
                   </Button>
+
+                  {!isPaymentVerified && (
+                    <div className="p-3 rounded-xl bg-amber-50 border border-amber-300 text-amber-950 text-xs space-y-1">
+                      <div className="flex items-center gap-1.5 font-bold text-amber-900">
+                        <Lock className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                        <span>Approval Locked: Payment Unverified</span>
+                      </div>
+                      <p className="text-[11px] text-amber-800 leading-relaxed">
+                        Critical Rule: Application approval is blocked until payment proof has been verified by an administrator (Payment Status: <strong>{appState.paymentStatus}</strong>).
+                      </p>
+                    </div>
+                  )}
 
                   <Button
                     type="button"
@@ -2230,7 +2933,7 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
                     <span>Reject Application</span>
                   </Button>
 
-                  {!isRequiredChecklistComplete && (
+                  {!isRequiredChecklistComplete && isPaymentVerified && (
                     <p className="text-[11px] text-amber-800 bg-amber-50 p-2 rounded-lg border border-amber-200 text-center font-medium">
                       Notice: Complete the required review checklist before approving.
                     </p>
@@ -2331,6 +3034,16 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
                 </span>
               </div>
               <div className="flex items-center justify-between pt-1 border-t border-slate-200">
+                <span className="text-slate-500">Payment Status:</span>
+                <Badge
+                  variant="outline"
+                  className={cn("text-xs font-semibold", getPaymentStatusBadgeConfig(appState.paymentStatus).badgeClass)}
+                >
+                  <span className={cn("inline-block w-1.5 h-1.5 rounded-full mr-1.5", getPaymentStatusBadgeConfig(appState.paymentStatus).dotColor)} />
+                  {appState.paymentStatus}
+                </Badge>
+              </div>
+              <div className="flex items-center justify-between pt-1 border-t border-slate-200">
                 <span className="text-emerald-700 font-semibold">
                   Vendor ID to Issue:
                 </span>
@@ -2339,6 +3052,23 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
                 </span>
               </div>
             </div>
+
+            {/* Critical Payment Rule Blocker */}
+            {!isPaymentVerified && (
+              <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-300 text-rose-950 space-y-1.5">
+                <div className="flex items-start gap-2">
+                  <Lock className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  <div className="space-y-0.5 text-xs">
+                    <p className="font-bold text-rose-900">
+                      Approval Blocked: Payment Verification Mandatory
+                    </p>
+                    <p className="text-rose-800 text-[11px] leading-relaxed">
+                      Critical Business Rule: An application must not be approved until its payment has been verified by an authorized administrator (Current payment status: <strong>{appState.paymentStatus}</strong>). Please verify the proof of payment first.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* 7. Checklist Incomplete Blocker */}
             {!isRequiredChecklistComplete ? (
@@ -2385,8 +3115,9 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
             </Button>
             <Button
               type="button"
+              disabled={!isPaymentVerified || !isRequiredChecklistComplete}
               onClick={handleApproveConfirm}
-              className="text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl cursor-pointer"
+              className="text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl cursor-pointer"
             >
               Approve Application
             </Button>
@@ -2722,6 +3453,301 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
               className="text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white rounded-xl h-9 cursor-pointer"
             >
               Delete Application
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ================= VERIFY PAYMENT DIALOG ================= */}
+      <Dialog open={verifyPaymentDialogOpen} onOpenChange={setVerifyPaymentDialogOpen}>
+        <DialogContent className="sm:max-w-md bg-white rounded-2xl p-6 shadow-xl border border-slate-200">
+          <DialogHeader>
+            <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center mb-1">
+              <ShieldCheck className="w-5 h-5 text-emerald-600" />
+            </div>
+            <DialogTitle className="text-lg font-bold text-slate-900">
+              Verify Vendor Payment Proof
+            </DialogTitle>
+            <DialogDescription className="text-xs sm:text-sm text-slate-600">
+              Confirm that the submitted payment receipt and transaction reference have been checked against official LGU accounts.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-2 space-y-3">
+            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/90 text-xs sm:text-sm space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Application Number:</span>
+                <span className="font-mono font-bold text-slate-900">{appState.applicationNumber}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Business / Owner:</span>
+                <span className="font-bold text-slate-900 truncate max-w-[200px]">{appState.businessName}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Payment Channel:</span>
+                <span className="font-semibold text-slate-900">{appState.paymentMethod}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Transaction Reference:</span>
+                <span className="font-mono font-bold text-blue-700">{appState.transactionReference}</span>
+              </div>
+              <div className="flex items-center justify-between pt-1 border-t border-slate-200">
+                <span className="text-slate-500">Assessed Fee:</span>
+                <span className="font-mono font-bold text-slate-900">{formatPhpCurrency(appState.assessedAmount)}</span>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label htmlFor="confirmed-amount-input" className="text-xs font-semibold text-slate-700 block">
+                Confirmed Amount Received (PHP)
+              </label>
+              <Input
+                id="confirmed-amount-input"
+                type="number"
+                value={confirmedAmountPaidInput || String(appState.amountPaid || appState.assessedAmount)}
+                onChange={(e) => setConfirmedAmountPaidInput(e.target.value)}
+                placeholder="1450"
+                className="h-10 text-sm font-mono bg-slate-50 border-slate-300 focus:bg-white rounded-xl"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label htmlFor="reviewer-admin-input" className="text-xs font-semibold text-slate-700 block">
+                Reviewing Administrator
+              </label>
+              <Input
+                id="reviewer-admin-input"
+                value={reviewerAdminInput}
+                onChange={(e) => setReviewerAdminInput(e.target.value)}
+                placeholder="Admin (CBPLD Review Officer)"
+                className="h-10 text-xs sm:text-sm bg-slate-50 border-slate-300 focus:bg-white rounded-xl"
+              />
+            </div>
+
+            <label className="flex items-start gap-2.5 p-3 rounded-xl bg-emerald-50/60 border border-emerald-200 cursor-pointer select-none">
+              <Checkbox
+                id="verify-check-receipt"
+                checked={verifyCheckReceiptAcknowledged}
+                onCheckedChange={(c) => setVerifyCheckReceiptAcknowledged(Boolean(c))}
+                className="mt-0.5"
+              />
+              <span className="text-xs text-emerald-950 font-medium leading-relaxed">
+                I confirm that I have personally inspected the uploaded proof of payment and verified the transaction with official LGU Butuan account / CTO records.
+              </span>
+            </label>
+
+            <div className="p-2.5 rounded-xl bg-blue-50 border border-blue-200 text-[11px] text-blue-900 flex items-start gap-2">
+              <Info className="w-3.5 h-3.5 text-blue-600 shrink-0 mt-0.5" />
+              <span>
+                <strong>Policy:</strong> Verifying payment enables application approval review, but does <em>not</em> automatically approve the vendor registration.
+              </span>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setVerifyPaymentDialogOpen(false)}
+              className="text-xs font-semibold rounded-xl h-9"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={!verifyCheckReceiptAcknowledged}
+              onClick={handleVerifyPaymentConfirm}
+              className="text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl h-9 cursor-pointer"
+            >
+              Confirm Payment Verification
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ================= REJECT PAYMENT PROOF DIALOG ================= */}
+      <Dialog open={rejectPaymentDialogOpen} onOpenChange={setRejectPaymentDialogOpen}>
+        <DialogContent className="sm:max-w-md bg-white rounded-2xl p-6 shadow-xl border border-slate-200">
+          <DialogHeader>
+            <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-800 flex items-center justify-center mb-1">
+              <XCircle className="w-5 h-5 text-rose-600" />
+            </div>
+            <DialogTitle className="text-lg font-bold text-slate-900">
+              Reject Proof of Payment
+            </DialogTitle>
+            <DialogDescription className="text-xs sm:text-sm text-slate-600">
+              Specify the reason why this payment proof cannot be accepted. This reason will be displayed to the vendor so they can upload a corrected receipt.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-2 space-y-3">
+            <div className="p-3 rounded-xl bg-rose-50/70 border border-rose-200 text-xs text-rose-900 space-y-1">
+              <div>
+                <span>Application: </span>
+                <strong className="font-mono">{appState.applicationNumber}</strong> — <strong>{appState.businessName}</strong>
+              </div>
+              <div>
+                <span>Transaction Reference: </span>
+                <strong className="font-mono">{appState.transactionReference}</strong>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label htmlFor="payment-rejection-input" className="text-xs font-semibold text-slate-700 flex items-center justify-between">
+                <span>Rejection Reason</span>
+                <span className="text-[11px] text-rose-500 font-normal">* Required</span>
+              </label>
+              <Textarea
+                id="payment-rejection-input"
+                placeholder="Enter specific instructions on what the vendor needs to correct or re-upload..."
+                value={paymentRejectionReason}
+                onChange={(e) => setPaymentRejectionReason(e.target.value)}
+                rows={4}
+                className={cn(
+                  "text-xs sm:text-sm bg-slate-50 border-slate-300 focus:bg-white resize-none rounded-xl",
+                  !paymentRejectionReason.trim() && "border-rose-400 focus:ring-rose-400"
+                )}
+              />
+              <div className="flex items-center justify-between text-[11px] text-slate-500">
+                <span>Quick reason templates:</span>
+              </div>
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {[
+                  "Unreadable or blurry receipt image",
+                  "Amount paid does not match assessed fee",
+                  "Transaction reference not found in LGU records",
+                  "Payment made to wrong account or channel",
+                  "Duplicate or previously submitted receipt",
+                ].map((reasonChip) => (
+                  <button
+                    key={reasonChip}
+                    type="button"
+                    onClick={() => setPaymentRejectionReason(reasonChip)}
+                    className="text-[10px] px-2 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition-colors text-left"
+                  >
+                    {reasonChip}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setRejectPaymentDialogOpen(false)}
+              className="text-xs font-semibold rounded-xl h-9"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={!paymentRejectionReason.trim()}
+              onClick={handleRejectPaymentConfirm}
+              className="text-xs font-semibold bg-rose-600 hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl h-9 cursor-pointer"
+            >
+              Reject Payment Proof
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ================= RECEIPT VIEWER DIALOG ================= */}
+      <Dialog open={receiptViewerModalOpen} onOpenChange={setReceiptViewerModalOpen}>
+        <DialogContent className="sm:max-w-2xl bg-white rounded-2xl p-6 shadow-2xl border border-slate-200">
+          <DialogHeader>
+            <DialogTitle className="text-base sm:text-lg font-bold text-slate-900 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Receipt className="w-5 h-5 text-blue-700" />
+                <span>Proof of Payment — {appState.receiptFilename || "Receipt Document"}</span>
+              </div>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-500">
+              Submitted by {appState.ownerName} ({appState.businessName}) • Ref: {appState.transactionReference}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-2 space-y-3">
+            <div className="rounded-xl border border-slate-200 bg-slate-950 p-3 flex items-center justify-center min-h-[300px] max-h-[65vh] overflow-auto">
+              {appState.receiptUrl ? (
+                appState.receiptFileType?.includes("pdf") || (appState.receiptFilename && appState.receiptFilename.toLowerCase().endsWith(".pdf")) ? (
+                  <div className="text-center text-white p-6 space-y-3">
+                    <div className="w-16 h-16 rounded-2xl bg-rose-600 text-white flex items-center justify-center font-bold text-xl mx-auto shadow-lg">
+                      PDF
+                    </div>
+                    <div>
+                      <p className="font-semibold text-sm">{appState.receiptFilename}</p>
+                      <p className="text-xs text-slate-400">PDF Document • {appState.receiptFileSize ? `${(appState.receiptFileSize / 1024 / 1024).toFixed(2)} MB` : "Document"}</p>
+                    </div>
+                    <div className="pt-2">
+                      <a
+                        href={appState.receiptUrl}
+                        download={appState.receiptFilename || "payment-receipt.pdf"}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={cn(buttonVariants({ variant: "default" }), "bg-blue-600 hover:bg-blue-700 text-white text-xs")}
+                      >
+                        <Download className="w-3.5 h-3.5 mr-1.5" />
+                        Download & Open PDF
+                      </a>
+                    </div>
+                  </div>
+                ) : (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={appState.receiptUrl}
+                    alt="Proof of Payment"
+                    className="max-h-[60vh] max-w-full object-contain rounded-lg"
+                  />
+                )
+              ) : (
+                <div className="text-center text-slate-400 p-8 space-y-2">
+                  <Receipt className="w-12 h-12 mx-auto text-slate-600" />
+                  <p className="text-sm font-semibold text-slate-300">No Receipt Image Data</p>
+                  <p className="text-xs text-slate-500">The applicant has not yet uploaded a receipt file.</p>
+                </div>
+              )}
+            </div>
+
+            <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/90 text-xs flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <span className="text-slate-500">Method:</span>{" "}
+                <span className="font-semibold text-slate-900">{appState.paymentMethod}</span>
+              </div>
+              <div>
+                <span className="text-slate-500">Reference:</span>{" "}
+                <span className="font-mono font-bold text-slate-900">{appState.transactionReference}</span>
+              </div>
+              <div>
+                <span className="text-slate-500">Uploaded:</span>{" "}
+                <span className="text-slate-700">{appState.receiptUploadedAt || appState.submittedDate}</span>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="flex flex-row items-center justify-between gap-2 sm:gap-0 pt-1">
+            {appState.receiptUrl ? (
+              <a
+                href={appState.receiptUrl}
+                download={appState.receiptFilename || `receipt-${appState.applicationNumber}.jpg`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={cn(buttonVariants({ variant: "outline", size: "sm" }), "text-xs font-semibold gap-1.5")}
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Download Receipt</span>
+              </a>
+            ) : <div />}
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setReceiptViewerModalOpen(false)}
+              className="text-xs font-semibold rounded-xl"
+            >
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -16,6 +16,76 @@ export type ApplicationStatus =
   | "approved"
   | "rejected";
 
+// ─── 2.5 Payment Status & Models ──────────────────────────────────────────────
+
+export type PaymentStatus =
+  | "unpaid"
+  | "pending_verification"
+  | "pending"
+  | "verified"
+  | "paid"
+  | "rejected"
+  | "failed"
+  | "cancelled"
+  | "refunded";
+
+export interface FeeItem {
+  id: string;
+  name: string;
+  description: string;
+  amount: number;
+  isRegulatory: boolean;
+  notes?: string;
+  code?: string;
+}
+
+export interface PaymentInformation {
+  /** Current lifecycle payment status */
+  status: PaymentStatus;
+  /** Total assessed fee amount in Philippine Pesos (PHP) */
+  assessedAmount: number;
+  /** Confirmed amount paid in PHP */
+  amountPaid: number;
+  /** Currency code (PHP) */
+  currency: "PHP";
+  /** Payment method chosen (e.g. "Maya", "GCash", "ATM / Debit Card", "Landbank Link.BizPortal", "CTO Cashier") */
+  paymentMethod?: string;
+  methodName?: string;
+  /** High-level payment method category */
+  paymentMethodCategory?: "e_wallet" | "card" | "online_banking" | "bank_transfer" | "otc" | "other";
+  methodCategory?: string;
+  /** Provider transaction reference or assessment tracking code */
+  transactionReference?: string;
+  /** Timestamp when payment was completed and verified */
+  paymentDate?: string | null;
+  /** Itemized breakdown of assessed fees */
+  feeBreakdown?: FeeItem[];
+  /** Fee assessment evaluation status */
+  assessmentStatus?: "assessed" | "assessment_required" | "pending_verification";
+  /** Explanatory notes on fee schedule and assessment */
+  assessmentNotes?: string;
+  /** Payment gateway provider (e.g. "Maya (Butuan City E-TRACS Partner)") */
+  gatewayProvider?: string;
+  /** Official municipal receipt or electronic receipt number */
+  receiptNumber?: string;
+  /** Uploaded proof of payment receipt file (Base64 Data URL or file reference) */
+  receiptUrl?: string;
+  /** Uploaded receipt original filename */
+  receiptFilename?: string;
+  /** Uploaded receipt file MIME type (image/png, image/jpeg, application/pdf) */
+  receiptFileType?: string;
+  /** Uploaded receipt file size in bytes */
+  receiptFileSize?: number;
+  /** Timestamp when the receipt proof was submitted by the vendor */
+  receiptUploadedAt?: string;
+  /** Rejection reason provided by administrator if proof of payment is rejected */
+  rejectionReason?: string;
+  /** Name/role of reviewing administrator who verified or rejected payment */
+  verifiedBy?: string;
+  /** Timestamp when payment was verified by administrator */
+  verifiedAt?: string;
+}
+
 // ─── 3. Business Information ──────────────────────────────────────────────────
 
 export interface BusinessInformation {
@@ -144,6 +214,12 @@ export interface VendorApplication {
 
   // 6. Documents
   documents: DocumentInformation[];
+
+  // 6.5. Fee Assessment & Payment Information
+  /** Official fee assessment, payment method, transaction reference, and status */
+  payment?: PaymentInformation;
+  paymentStatus?: PaymentStatus;
+  amountPaid?: number;
 
   // 7. Admin information
   /** Current administrator remarks visible to vendor when correction or review is required */

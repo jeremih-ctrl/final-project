@@ -61,60 +61,60 @@ export function Navbar() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16 sm:h-[4.25rem]">
           {/* Logo & System Name */}
-          <Link href="/" className="flex items-center gap-3 group">
+          <Link href="/" className="flex items-center gap-2 sm:gap-3 group shrink-0">
             {/* Blue Circular Government / Logo Mark */}
-            <div className="w-10 h-10 rounded-full bg-[#155EEF] text-white flex items-center justify-center shadow-xs ring-4 ring-blue-50 transition-transform duration-200 group-hover:scale-105 shrink-0">
-              <Store className="w-5 h-5" />
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-[#155EEF] text-white flex items-center justify-center shadow-xs ring-4 ring-blue-50 transition-transform duration-200 group-hover:scale-105 shrink-0">
+              <Store className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
             <div className="flex flex-col">
-              <span className="font-bold text-[#0F1E36] text-base sm:text-lg leading-tight tracking-tight group-hover:text-[#155EEF] transition-colors">
+              <span className="font-bold text-[#0F1E36] text-xs sm:text-[13px] lg:text-base xl:text-lg leading-tight tracking-tight group-hover:text-[#155EEF] transition-colors whitespace-nowrap">
                 Butuan Vendors Registration System
               </span>
-              <span className="text-xs text-slate-500 font-medium hidden sm:inline">
+              <span className="text-xs text-slate-500 font-medium hidden xl:inline whitespace-nowrap">
                 City Government of Butuan • Agusan del Norte
               </span>
             </div>
           </Link>
 
-          {/* Desktop Navigation Links with subtle hover underline */}
-          <nav className="hidden md:flex items-center gap-6 lg:gap-8">
-            <Link
-              href="/"
-              className="relative py-1 text-sm font-semibold text-[#155EEF] after:absolute after:bottom-0 after:left-0 after:w-full after:h-[2px] after:bg-[#155EEF] transition-colors"
-            >
-              Home
-            </Link>
-            <Link
-              href="#how-it-works"
-              className="relative py-1 text-sm font-medium text-slate-600 hover:text-[#0F1E36] after:absolute after:bottom-0 after:left-0 after:w-0 hover:after:w-full after:h-[2px] after:bg-[#155EEF] after:transition-all after:duration-200 transition-colors"
-            >
-              How It Works
-            </Link>
-            <Link
-              href="#requirements"
-              className="relative py-1 text-sm font-medium text-slate-600 hover:text-[#0F1E36] after:absolute after:bottom-0 after:left-0 after:w-0 hover:after:w-full after:h-[2px] after:bg-[#155EEF] after:transition-all after:duration-200 transition-colors"
-            >
-              Requirements
-            </Link>
-            <Link
-              href="/application-status"
-              className="relative py-1 text-sm font-medium text-slate-600 hover:text-[#0F1E36] after:absolute after:bottom-0 after:left-0 after:w-0 hover:after:w-full after:h-[2px] after:bg-[#155EEF] after:transition-all after:duration-200 transition-colors"
-            >
-              Track Status
-            </Link>
-          </nav>
+          {/* Desktop Navigation Links & Register CTA Grouped on the Right */}
+          <div className="hidden md:flex items-center gap-2 lg:gap-5 xl:gap-8 shrink-0">
+            <nav className="flex items-center gap-2 lg:gap-5 xl:gap-8">
+              <Link
+                href="/"
+                className="relative py-1 text-[11px] lg:text-sm font-semibold text-[#155EEF] after:absolute after:bottom-0 after:left-0 after:w-full after:h-[2px] after:bg-[#155EEF] transition-colors whitespace-nowrap"
+              >
+                Home
+              </Link>
+              <Link
+                href="#how-it-works"
+                className="relative py-1 text-[11px] lg:text-sm font-medium text-slate-600 hover:text-[#0F1E36] after:absolute after:bottom-0 after:left-0 after:w-0 hover:after:w-full after:h-[2px] after:bg-[#155EEF] after:transition-all after:duration-200 transition-colors whitespace-nowrap"
+              >
+                How It Works
+              </Link>
+              <Link
+                href="#requirements"
+                className="relative py-1 text-[11px] lg:text-sm font-medium text-slate-600 hover:text-[#0F1E36] after:absolute after:bottom-0 after:left-0 after:w-0 hover:after:w-full after:h-[2px] after:bg-[#155EEF] after:transition-all after:duration-200 transition-colors whitespace-nowrap"
+              >
+                Requirements
+              </Link>
+              <Link
+                href="/application-status"
+                className="relative py-1 text-[11px] lg:text-sm font-medium text-slate-600 hover:text-[#0F1E36] after:absolute after:bottom-0 after:left-0 after:w-0 hover:after:w-full after:h-[2px] after:bg-[#155EEF] after:transition-all after:duration-200 transition-colors whitespace-nowrap"
+              >
+                Track Status
+              </Link>
+            </nav>
 
-          {/* Prominent Blue Primary CTA */}
-          <div className="hidden md:flex items-center gap-3">
+            {/* Prominent Blue Primary CTA */}
             <Link
               href="/register"
               className={cn(
                 buttonVariants({ variant: "default", size: "default" }),
-                "rounded-[10px] font-semibold px-5 py-2.5 bg-[#155EEF] hover:bg-[#1048b8] text-white shadow-xs hover:shadow-md transition-all duration-200 hover:-translate-y-0.5 active:scale-[0.98] cursor-pointer gap-2"
+                "rounded-[10px] font-semibold px-2.5 py-1.5 text-[11px] lg:px-5 lg:py-2.5 lg:text-sm bg-[#155EEF] hover:bg-[#1048b8] text-white shadow-xs hover:shadow-md transition-all duration-200 hover:-translate-y-0.5 active:scale-[0.98] cursor-pointer gap-1.5 lg:gap-2 shrink-0 whitespace-nowrap"
               )}
             >
               Register as a Vendor
-              <ArrowRight className="w-4 h-4 ml-0.5 transition-transform duration-200 group-hover:translate-x-0.5" />
+              <ArrowRight className="w-3.5 h-3.5 lg:w-4 lg:h-4 ml-0.5 transition-transform duration-200 group-hover:translate-x-0.5" />
             </Link>
           </div>
 

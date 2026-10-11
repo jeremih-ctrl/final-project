@@ -21,7 +21,7 @@ export function ShinyText({
 
   return (
     <span
-      className={`relative inline-block overflow-hidden ${
+      className={`relative inline-block align-baseline ${
         disabled ? "" : "animate-shiny-text"
       } ${className}`}
       style={{
@@ -30,6 +30,7 @@ export function ShinyText({
           : `linear-gradient(120deg, currentColor 0%, currentColor 38%, ${shimmerColor} 50%, currentColor 62%, currentColor 100%)`,
         backgroundSize: "200% 100%",
         WebkitBackgroundClip: "text",
+        backgroundClip: "text",
         WebkitTextFillColor: disabled ? "inherit" : "transparent",
         animationDuration,
       }}

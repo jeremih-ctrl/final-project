@@ -27,6 +27,8 @@ export type AdminNotificationType =
   | "document-uploaded"
   | "document-verified"
   | "document-replacement"
+  | "payment-verified"
+  | "payment-rejected"
   | "system";
 
 export type VendorNotificationType =
@@ -38,6 +40,9 @@ export type VendorNotificationType =
   | "document-received"
   | "document-verified"
   | "document-replacement"
+  | "payment-verified"
+  | "payment-rejected"
+  | "application-status-updated"
   | "system";
 
 export interface AdminNotification {

@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+import { useState, useSyncExternalStore, useMemo } from "react";
 import Link from "next/link";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import {
   CheckCircle2,
   Copy,
@@ -14,9 +15,13 @@ import {
   Clock,
   ShieldCheck,
   FileText,
+  Receipt,
+  LayoutDashboard,
+  AlertTriangle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { getApplications } from "@/lib/application-store";
+import { getApplications, getApplication } from "@/lib/application-store";
+import { formatPhpCurrency, getPaymentStatusBadgeConfig } from "@/lib/payment-fee-schedule";
 
 function getClientAppNumber(): string {
   if (typeof window === "undefined") return "";
@@ -33,18 +38,40 @@ function getClientAppNumber(): string {
 }
 
 export default function RegisterSuccessPage() {
-  const [copied, setCopied] = useState(false);
+  const [copiedApp, setCopiedApp] = useState(false);
+  const [copiedPayRef, setCopiedPayRef] = useState(false);
+
   const applicationNumber = useSyncExternalStore(
     () => () => {},
     getClientAppNumber,
     () => ""
   );
 
-  const handleCopy = () => {
-    if (navigator?.clipboard) {
+  const appRecord = useMemo(() => {
+    if (!applicationNumber) return null;
+    return getApplication(applicationNumber);
+  }, [applicationNumber]);
+
+  const payRef =
+    appRecord?.payment?.transactionReference ||
+    (applicationNumber ? `PAY-${applicationNumber.replace(/[^A-Za-z0-9]/g, "").toUpperCase()}` : "PAY-BVR-PENDING");
+
+  const paymentStatus = appRecord?.payment?.status || "unpaid";
+  const badgeConfig = getPaymentStatusBadgeConfig(paymentStatus);
+
+  const handleCopyApp = () => {
+    if (navigator?.clipboard && applicationNumber) {
       navigator.clipboard.writeText(applicationNumber);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2500);
+      setCopiedApp(true);
+      setTimeout(() => setCopiedApp(false), 2500);
+    }
+  };
+
+  const handleCopyPayRef = () => {
+    if (navigator?.clipboard && payRef) {
+      navigator.clipboard.writeText(payRef);
+      setCopiedPayRef(true);
+      setTimeout(() => setCopiedPayRef(false), 2500);
     }
   };
 
@@ -78,7 +105,7 @@ export default function RegisterSuccessPage() {
                 Butuan Vendors Registration System
               </span>
               <span className="text-xs text-slate-500 font-medium hidden sm:inline">
-                Registration Confirmation
+                Registration & Assessment Slip Confirmation
               </span>
             </div>
           </Link>
@@ -106,72 +133,137 @@ export default function RegisterSuccessPage() {
               {/* Title & Description */}
               <div className="space-y-2">
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold uppercase tracking-wider">
-                  Submission Received
+                  Registration & Assessment Received
                 </div>
                 <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
                   Registration Submitted Successfully
                 </h1>
                 <p className="text-sm sm:text-base text-slate-600 max-w-md mx-auto leading-relaxed">
-                  Your vendor registration has been successfully submitted and is now awaiting review.
+                  Your vendor registration application has been received and queued for review. Your official fee assessment reference has been generated below.
                 </p>
               </div>
 
-              {/* Application Number Box with Copy Action */}
-              <div className="p-4 sm:p-5 rounded-2xl bg-slate-50 border border-slate-200/90 text-left space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                    Application Number
-                  </span>
-                  <span className="text-[11px] font-medium text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200">
-                    Submitted
-                  </span>
+              {/* Application & Assessment Reference Card */}
+              <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200/90 text-left space-y-4">
+                {/* Application Number */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                      Application Number
+                    </span>
+                    <span className="text-[11px] font-medium text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200">
+                      Under Review
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 bg-white p-3 rounded-xl border border-slate-200">
+                    <span className="font-mono text-base sm:text-lg font-bold tracking-wider text-slate-900">
+                      {applicationNumber || "BVR-2026-PENDING"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleCopyApp}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors cursor-pointer"
+                      aria-label="Copy application number"
+                    >
+                      {copiedApp ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 text-emerald-600" />
+                          <span className="text-emerald-700 font-semibold">Copied!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3.5 h-3.5" />
+                          <span>Copy</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
 
-                <div className="flex items-center justify-between gap-3 bg-white p-3 rounded-xl border border-slate-200">
-                  <span className="font-mono text-lg sm:text-xl font-bold tracking-wider text-slate-900">
-                    {applicationNumber}
-                  </span>
-
-                  <button
-                    type="button"
-                    onClick={handleCopy}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors cursor-pointer"
-                    aria-label="Copy application number"
-                  >
-                    {copied ? (
-                      <>
-                        <Check className="w-3.5 h-3.5 text-emerald-600" />
-                        <span className="text-emerald-700 font-semibold">Copied!</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-3.5 h-3.5" />
-                        <span>Copy</span>
-                      </>
-                    )}
-                  </button>
+                {/* Assessment Reference */}
+                <div className="space-y-1.5 pt-2 border-t border-slate-200/80">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                      <Receipt className="w-3.5 h-3.5 text-blue-700" />
+                      Payment Assessment Reference
+                    </span>
+                    <Badge variant="outline" className={cn("text-[11px]", badgeConfig.badgeClass)}>
+                      <span className={cn("inline-block w-1.5 h-1.5 rounded-full mr-1.5", badgeConfig.dotColor)} />
+                      {badgeConfig.label}
+                    </Badge>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 bg-white p-3 rounded-xl border border-slate-200">
+                    <span className="font-mono text-base sm:text-lg font-bold tracking-wider text-blue-700">
+                      {payRef}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleCopyPayRef}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors cursor-pointer"
+                      aria-label="Copy assessment reference"
+                    >
+                      {copiedPayRef ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 text-emerald-600" />
+                          <span className="text-emerald-700 font-semibold">Copied!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3.5 h-3.5" />
+                          <span>Copy</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
 
-                <p className="text-xs text-slate-500 flex items-center gap-1.5">
-                  <ShieldCheck className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                  <span>Please keep your application number for future reference.</span>
-                </p>
+                {/* Assessment Breakdown Summary */}
+                <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-2 text-xs">
+                  <div className="flex justify-between items-center text-slate-600">
+                    <span>Business Activity:</span>
+                    <span className="font-semibold text-slate-900">{appRecord?.business?.category || "Registered Vendor"}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-slate-600">
+                    <span>Selected Payment Channel:</span>
+                    <span className="font-semibold text-slate-900">{appRecord?.payment?.paymentMethod || "Maya / CTO Cashier"}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-slate-600 border-t border-slate-100 pt-2 font-medium">
+                    <span className="font-bold text-slate-800">Total Assessed Fee:</span>
+                    <span className="font-mono font-bold text-blue-700 text-sm">
+                      {appRecord?.payment?.assessedAmount
+                        ? formatPhpCurrency(appRecord.payment.assessedAmount)
+                        : "₱1,450.00"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-slate-600">
+                    <span>Amount Confirmed Paid:</span>
+                    <span className="font-mono font-semibold text-slate-700">
+                      {formatPhpCurrency(appRecord?.payment?.amountPaid || 0)}
+                    </span>
+                  </div>
+                </div>
               </div>
 
-              {/* Next Steps / Reassurance */}
-              <div className="rounded-xl bg-blue-50/50 border border-blue-200/70 p-4 text-left space-y-2 text-xs text-slate-600">
-                <span className="font-semibold text-slate-800 text-xs flex items-center gap-1.5">
+              {/* Pending Payment Reassurance / Next Steps */}
+              <div className="rounded-xl bg-blue-50/60 border border-blue-200/80 p-4 text-left space-y-2 text-xs text-slate-700">
+                <span className="font-bold text-blue-950 text-xs flex items-center gap-1.5">
                   <Clock className="w-3.5 h-3.5 text-blue-600" />
-                  What happens next?
+                  Official Settlement Instructions:
                 </span>
                 <ul className="space-y-1.5 list-disc list-inside text-slate-600">
-                  <li>City administrators review your vendor credentials within 2–3 business days.</li>
-                  <li>Updates will be communicated via your registered mobile number and email.</li>
-                  <li>You can track real-time application progress online anytime.</li>
+                  <li>
+                    <strong>Over-the-Counter Cashier:</strong> Present your Assessment Reference (<strong>{payRef}</strong>) at the City Treasurer&apos;s Office (CTO) Cashier at Butuan City Hall BOSS to settle fees and obtain your official receipt.
+                  </li>
+                  <li>
+                    <strong>Online Maya Checkout:</strong> When the municipal Maya online portal opens for your application batch, your payment status will update automatically upon verification.
+                  </li>
+                  <li>
+                    <strong>Avoid Duplicate Charges:</strong> If your payment is currently pending confirmation, please wait for verification rather than paying again immediately.
+                  </li>
                 </ul>
               </div>
 
-              {/* Primary & Secondary Action Buttons */}
+              {/* Action Buttons */}
               <div className="pt-2 flex flex-col sm:flex-row items-center gap-3">
                 <Link
                   href={applicationNumber ? `/application-status?appNumber=${applicationNumber}` : "/application-status"}
@@ -186,13 +278,14 @@ export default function RegisterSuccessPage() {
                 </Link>
 
                 <Link
-                  href="/"
+                  href="/dashboard"
                   className={cn(
                     buttonVariants({ variant: "outline", size: "lg" }),
-                    "w-full sm:w-auto font-medium justify-center border-slate-300 text-slate-700 hover:bg-slate-100 py-3 cursor-pointer"
+                    "w-full sm:w-auto font-medium justify-center border-slate-300 text-slate-700 hover:bg-slate-100 py-3 cursor-pointer gap-2"
                   )}
                 >
-                  Return to Home
+                  <LayoutDashboard className="w-4 h-4" />
+                  Go to Dashboard
                 </Link>
               </div>
             </CardContent>

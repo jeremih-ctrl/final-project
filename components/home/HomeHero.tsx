@@ -13,7 +13,7 @@ import { ShinyText } from "@/components/reactbits/ShinyText";
 
 export function HomeHero() {
   return (
-    <section className="relative overflow-hidden pt-12 pb-16 sm:pt-16 sm:pb-20 lg:pt-20 lg:pb-24 bg-white border-b border-slate-200/80">
+    <section className="relative overflow-hidden pt-10 pb-12 sm:pt-12 sm:pb-14 lg:pt-14 lg:pb-16 bg-white border-b border-slate-200/80">
       {/* ─── 1. React Bits / OGL Interactive Waves Civic Background ─── */}
       <HomeBackground />
 

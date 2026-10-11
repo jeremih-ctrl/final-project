@@ -47,16 +47,23 @@ import {
 import {
   BARANGAY_OPTIONS,
   STATUS_OPTIONS,
+  PAYMENT_STATUS_OPTIONS,
   type ApplicationStatus,
   type AdminApplication,
+  type AdminPaymentStatus,
 } from "@/lib/admin-applications-data";
 import { useSharedApplication } from "@/lib/vendor-application-state";
 import {
   useStoredApplications,
   useDeletedApplicationIds,
   deleteAdminApplicationRecord,
+  isDemoOrMockApplication,
 } from "@/lib/application-store";
 import { cn } from "@/lib/utils";
+import {
+  formatPhpCurrency,
+  getPaymentStatusBadgeConfig,
+} from "@/lib/payment-fee-schedule";
 
 function formatSubmittedDate(dateStr: string | null | undefined): string {
   if (!dateStr) return "Oct 7, 2026";
@@ -80,6 +87,7 @@ export default function AdminApplicationsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStatus, setSelectedStatus] = useState<string>("All");
   const [selectedBarangay, setSelectedBarangay] = useState<string>("All Barangays");
+  const [selectedPaymentStatus, setSelectedPaymentStatus] = useState<string>("All");
 
   // Deletion confirmation dialog state
   const [deleteTargetApp, setDeleteTargetApp] = useState<AdminApplication | null>(null);
@@ -135,65 +143,102 @@ export default function AdminApplicationsPage() {
       rejected: "Rejected",
     };
 
+    const genuineStored = storedApplications.filter(
+      (app) => !isDemoOrMockApplication(app)
+    );
+
     const storedMapped: (AdminApplication & { sortTime: number })[] =
-      storedApplications.map((app) => ({
-        id: app.applicationNumber || app.id,
-        businessName: app.business.businessName,
-        owner: app.owner.ownerName,
-        barangay: app.address.barangay,
-        submitted: formatSubmittedDate(app.submittedAt),
-        status: statusMap[app.status.toLowerCase()] || "Submitted",
-        businessDescription:
-          app.business.businessDescription ||
-          "Vendor registration application submitted online.",
-        contactNumber: app.contact.contactNumber,
-        email: app.contact.emailAddress,
-        address: {
-          houseNumber: app.address.houseNo,
-          street: app.address.street,
-          barangay: app.address.barangay,
-          city: app.address.city || "Butuan City",
-          province: app.address.province || "Agusan del Norte",
-          region: app.address.region || "Caraga",
-          country: app.address.country || "Philippines",
-        },
-        governmentId: app.documents?.[0]
-          ? {
-              submitted: true,
-              filename:
-                app.documents[0].filename ||
-                app.documents[0].idFileName ||
-                "government-id.pdf",
-              idType: app.documents[0].idType || "Philippine National ID",
-              uploadedAt: formatSubmittedDate(
-                app.documents[0].uploadedAt || app.submittedAt
-              ),
-              status: "Submitted",
-            }
-          : undefined,
-        remarks: app.adminRemarks,
-        vendorId: app.vendorId,
-        activityTimeline: [
-          {
-            id: `act-${app.id}-1`,
-            title: "Application Submitted",
-            date: formatSubmittedDate(app.submittedAt),
-            description: "Vendor submitted registration application.",
-            type: "submission",
+      genuineStored.map((app) => {
+        const rawPay = app.payment;
+        let pStatus: AdminPaymentStatus = "Unpaid";
+        if (rawPay?.status) {
+          const s = rawPay.status.toLowerCase().replace(/[\s-]+/g, "_");
+          if (s === "pending_verification" || s === "pending") {
+            pStatus = "Pending Verification";
+          } else if (s === "verified" || s === "paid") {
+            pStatus = "Verified";
+          } else if (s === "rejected") {
+            pStatus = "Rejected";
+          } else {
+            pStatus = "Unpaid";
+          }
+        }
+
+        return {
+          id: app.applicationNumber || app.id,
+          businessName: app.business?.businessName || "Vendor Business",
+          owner: app.owner?.ownerName || "Vendor Applicant",
+          barangay: app.address?.barangay || "Barangay Urduja",
+          submitted: formatSubmittedDate(app.submittedAt),
+          status: statusMap[app.status?.toLowerCase()] || "Submitted",
+          businessDescription:
+            app.business?.businessDescription ||
+            "Vendor registration application submitted online.",
+          contactNumber: app.contact?.contactNumber || "",
+          email: app.contact?.emailAddress || "",
+          address: {
+            houseNumber: app.address?.houseNo || "",
+            street: app.address?.street || "",
+            barangay: app.address?.barangay || "",
+            city: app.address?.city || "Butuan City",
+            province: app.address?.province || "Agusan del Norte",
+            region: app.address?.region || "Caraga",
+            country: app.address?.country || "Philippines",
           },
-        ],
-        sortTime: app.submittedAt
-          ? new Date(app.submittedAt).getTime()
-          : 0,
-      }));
+          governmentId: app.documents?.[0]
+            ? {
+                submitted: true,
+                filename:
+                  app.documents[0].filename ||
+                  app.documents[0].idFileName ||
+                  "government-id.pdf",
+                idType: app.documents[0].idType || "Philippine National ID",
+                uploadedAt: formatSubmittedDate(
+                  app.documents[0].uploadedAt || app.submittedAt
+                ),
+                status: "Submitted",
+              }
+            : undefined,
+          remarks: app.adminRemarks,
+          vendorId: app.vendorId,
+          activityTimeline: [
+            {
+              id: `act-${app.id}-1`,
+              title: "Application Submitted",
+              date: formatSubmittedDate(app.submittedAt),
+              description: "Vendor submitted registration application.",
+              type: "submission",
+            },
+          ],
+          sortTime: app.submittedAt
+            ? new Date(app.submittedAt).getTime()
+            : 0,
+          paymentStatus: pStatus,
+          assessedAmount: rawPay?.assessedAmount ?? 1450,
+          amountPaid: rawPay?.amountPaid ?? 0,
+          transactionReference: rawPay?.transactionReference || `PAY-${app.applicationNumber || app.id}`,
+          paymentDate: rawPay?.paymentDate || null,
+          paymentMethod: rawPay?.paymentMethod || "Maya",
+        };
+      });
 
     const deletedSet = new Set(
       deletedApplicationIds.map((id) => id.trim().toLowerCase())
     );
 
-    return storedMapped
-      .filter((app) => !deletedSet.has(app.id.toLowerCase()))
-      .sort((a, b) => b.sortTime - a.sortTime);
+    // Prevent duplicate entries caused by re-renders or repeated initialization
+    const seenIds = new Set<string>();
+    const deduplicated: (AdminApplication & { sortTime: number })[] = [];
+
+    for (const app of storedMapped) {
+      const normalizedId = app.id.trim().toLowerCase();
+      if (!seenIds.has(normalizedId) && !deletedSet.has(normalizedId)) {
+        seenIds.add(normalizedId);
+        deduplicated.push(app);
+      }
+    }
+
+    return deduplicated.sort((a, b) => b.sortTime - a.sortTime);
   }, [storedApplications, deletedApplicationIds]);
 
   const dynamicBarangayOptions = useMemo(() => {
@@ -228,19 +273,25 @@ export default function AdminApplicationsPage() {
         selectedBarangay === "All Barangays" ||
         app.barangay.toLowerCase() === selectedBarangay.toLowerCase();
 
-      return matchesSearch && matchesStatus && matchesBarangay;
+      // Payment Status matching
+      const matchesPaymentStatus =
+        selectedPaymentStatus === "All" || app.paymentStatus === selectedPaymentStatus;
+
+      return matchesSearch && matchesStatus && matchesBarangay && matchesPaymentStatus;
     });
-  }, [allApplications, searchQuery, selectedStatus, selectedBarangay]);
+  }, [allApplications, searchQuery, selectedStatus, selectedBarangay, selectedPaymentStatus]);
 
   const hasActiveFilters =
     searchQuery.trim() !== "" ||
     selectedStatus !== "All" ||
-    selectedBarangay !== "All Barangays";
+    selectedBarangay !== "All Barangays" ||
+    selectedPaymentStatus !== "All";
 
   const clearFilters = () => {
     setSearchQuery("");
     setSelectedStatus("All");
     setSelectedBarangay("All Barangays");
+    setSelectedPaymentStatus("All");
   };
 
   const getStatusBadge = (status: ApplicationStatus) => {
@@ -460,6 +511,28 @@ export default function AdminApplicationsPage() {
                   </Select>
                 </div>
 
+                {/* Payment Status Filter */}
+                <div className="w-full sm:w-44">
+                  <Select
+                    value={selectedPaymentStatus}
+                    onValueChange={(val) => val && setSelectedPaymentStatus(val)}
+                  >
+                    <SelectTrigger className="w-full h-10 px-3 bg-slate-50/60 border-slate-300 text-sm rounded-xl">
+                      <div className="flex items-center gap-1.5 truncate">
+                        <span className="text-slate-500 text-xs font-normal">Payment:</span>
+                        <SelectValue placeholder="All" />
+                      </div>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PAYMENT_STATUS_OPTIONS.map((pStatus) => (
+                        <SelectItem key={pStatus} value={pStatus}>
+                          {pStatus}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 {/* Clear / Reset Filters */}
                 {hasActiveFilters && (
                   <Button
@@ -516,6 +589,7 @@ export default function AdminApplicationsPage() {
                   <TableHead className="font-bold text-slate-700">Owner</TableHead>
                   <TableHead className="font-bold text-slate-700">Barangay</TableHead>
                   <TableHead className="font-bold text-slate-700">Submitted</TableHead>
+                  <TableHead className="font-bold text-slate-700">Payment</TableHead>
                   <TableHead className="font-bold text-slate-700">Status</TableHead>
                   <TableHead className="font-bold text-slate-700 text-right pr-6">Action</TableHead>
                 </TableRow>
@@ -523,20 +597,24 @@ export default function AdminApplicationsPage() {
               <TableBody>
                 {filteredApplications.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="py-12 text-center">
+                    <TableCell colSpan={8} className="py-12 text-center">
                       <div className="flex flex-col items-center justify-center space-y-3">
                         <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center">
-                          <SlidersHorizontal className="w-6 h-6" />
+                          {totalCount === 0 ? (
+                            <FileCheck2 className="w-6 h-6 text-slate-400" />
+                          ) : (
+                            <SlidersHorizontal className="w-6 h-6 text-slate-400" />
+                          )}
                         </div>
                         <div className="space-y-1">
                           <h4 className="text-sm font-bold text-slate-800">
                             {totalCount === 0
-                              ? "No applications have been submitted yet."
+                              ? "No Applications Yet"
                               : "No applications match your criteria"}
                           </h4>
                           <p className="text-xs text-slate-500 max-w-sm mx-auto">
                             {totalCount === 0
-                              ? "Submitted vendor applications will appear here once received."
+                              ? "New vendor registration applications will appear here once a vendor submits an application."
                               : "Try adjusting your search terms or clearing status and barangay filters."}
                           </p>
                         </div>
@@ -593,6 +671,30 @@ export default function AdminApplicationsPage() {
                       {/* Submitted */}
                       <TableCell className="text-xs text-slate-500 whitespace-nowrap">
                         {app.submitted}
+                      </TableCell>
+
+                      {/* Payment */}
+                      <TableCell className="whitespace-nowrap">
+                        <div className="space-y-0.5">
+                          <Badge
+                            variant="outline"
+                            className={cn(
+                              "text-[11px] px-2 py-0.5",
+                              getPaymentStatusBadgeConfig(app.paymentStatus).badgeClass
+                            )}
+                          >
+                            <span
+                              className={cn(
+                                "inline-block w-1.5 h-1.5 rounded-full mr-1.5",
+                                getPaymentStatusBadgeConfig(app.paymentStatus).dotColor
+                              )}
+                            />
+                            {app.paymentStatus || "Unpaid"}
+                          </Badge>
+                          <span className="font-mono text-xs font-semibold text-slate-700 block">
+                            {formatPhpCurrency(app.assessedAmount)}
+                          </span>
+                        </div>
                       </TableCell>
 
                       {/* Status */}
@@ -709,7 +811,7 @@ export default function AdminApplicationsPage() {
           Butuan City Public Market & Vendor Licensing Division — Administrator Review Console
         </p>
         <p className="font-mono text-[11px] text-slate-400">
-          Showing local registry records (Mock UI Mode)
+          Showing local registry records
         </p>
       </div>
     </div>

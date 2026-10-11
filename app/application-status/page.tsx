@@ -24,12 +24,36 @@ import {
   Search,
   SearchX,
   FileSearch,
+  Loader2,
+  CreditCard,
+  Receipt,
+  Upload,
+  Eye,
+  Download,
+  Trash2,
+  QrCode,
+  Landmark,
+  Wallet,
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { useStoredApplications } from "@/lib/application-store";
-import { VendorApplication, ApplicationStatus } from "@/lib/types/vendor-application";
-import { useSharedApplication } from "@/lib/vendor-application-state";
+import { useStoredApplications, isApplicationDeleted, updateApplication } from "@/lib/application-store";
+import { VendorApplication, ApplicationStatus, PaymentInformation } from "@/lib/types/vendor-application";
+import { useSharedApplication, saveSharedApplication } from "@/lib/vendor-application-state";
 import { useVendorAuth } from "@/lib/demo-auth";
+import {
+  formatPhpCurrency,
+  getPaymentStatusBadgeConfig,
+  LGU_EWALLET_INSTRUCTIONS,
+  LGU_BANK_TRANSFER_INSTRUCTIONS,
+} from "@/lib/payment-fee-schedule";
 
 type StatusState =
   | "draft"
@@ -302,10 +326,59 @@ function ApplicationStatusContent() {
   const [copied, setCopied] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeAppId, setActiveAppId] = useState<string | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [lookupError, setLookupError] = useState<string | null>(null);
 
-  const queryParam = searchParams?.get("appNumber") || searchParams?.get("id");
+  // Payment proof resubmission and preview state
+  const [resubmitModalOpen, setResubmitModalOpen] = useState(false);
+  const [viewReceiptModalOpen, setViewReceiptModalOpen] = useState(false);
+  const [resubmitFile, setResubmitFile] = useState<File | null>(null);
+  const [resubmitFileDataUrl, setResubmitFileDataUrl] = useState<string | null>(null);
+  const [resubmitFilename, setResubmitFilename] = useState<string>("");
+  const [resubmitFileType, setResubmitFileType] = useState<string>("");
+  const [resubmitFileSize, setResubmitFileSize] = useState<number>(0);
+  const [resubmitCategory, setResubmitCategory] = useState<"e_wallet" | "bank_transfer" | "card" | "other">("e_wallet");
+  const [resubmitMethodName, setResubmitMethodName] = useState("Maya / GCash (Official E-Wallet)");
+  const [resubmitTxRef, setResubmitTxRef] = useState("");
+  const [resubmitAmountPaid, setResubmitAmountPaid] = useState("");
+  const [resubmitPaymentDate, setResubmitPaymentDate] = useState("");
+  const [resubmitFileError, setResubmitFileError] = useState<string | null>(null);
+  const [resubmitSuccessMessage, setResubmitSuccessMessage] = useState<string | null>(null);
+  const [isSubmittingProof, setIsSubmittingProof] = useState(false);
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
+
+  const handleResubmitFileSelect = (file: File) => {
+    setResubmitFileError(null);
+    const validTypes = ["image/jpeg", "image/jpg", "image/png", "application/pdf"];
+    const isPdf = file.name.toLowerCase().endsWith(".pdf") || file.type === "application/pdf";
+    const isImage = validTypes.includes(file.type) || /\.(jpg|jpeg|png)$/i.test(file.name);
+
+    if (!isPdf && !isImage) {
+      setResubmitFileError("Unsupported file format. Please upload JPG, JPEG, PNG, or PDF.");
+      return;
+    }
+
+    const maxSize = 5 * 1024 * 1024; // 5MB
+    if (file.size > maxSize) {
+      setResubmitFileError(`File size (${(file.size / 1024 / 1024).toFixed(1)}MB) exceeds the 5MB limit. Please upload a smaller file.`);
+      return;
+    }
+
+    setResubmitFile(file);
+    setResubmitFilename(file.name);
+    setResubmitFileType(file.type || (isPdf ? "application/pdf" : "image/jpeg"));
+    setResubmitFileSize(file.size);
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      setResubmitFileDataUrl(reader.result as string);
+    };
+    reader.onerror = () => {
+      setResubmitFileError("Failed to read file. Please choose the file again.");
+    };
+    reader.readAsDataURL(file);
+  };
 
   // Create canonical VendorApplication from the shared state
   const sharedVendorApp: VendorApplication = useMemo(() => {
@@ -383,11 +456,14 @@ function ApplicationStatusContent() {
       })),
       submittedAt: sharedApp.submittedAt,
       updatedAt: sharedApp.updatedAt,
+      payment: sharedApp.payment,
     };
-  }, [sharedApp]);
-
-  // Resolve the active vendor application based on real data & shared state
+  }, [sharedApp]);  // Resolve the active vendor application based strictly on user search
   const activeApp: VendorApplication | null = useMemo(() => {
+    if (!activeAppId) {
+      return null;
+    }
+
     const mergeSharedIfTarget = (app: VendorApplication): VendorApplication => {
       const isTarget =
         app.id.toLowerCase() === sharedApp.id.toLowerCase() ||
@@ -414,54 +490,34 @@ function ApplicationStatusContent() {
         currentStage: sharedApp.currentStage,
         vendorId: sharedApp.vendorId || app.vendorId || (isApproved ? "Assigned upon release" : "Pending assignment"),
         adminRemarks: sharedApp.adminRemarks ?? app.adminRemarks,
+        payment: app.payment || sharedApp.payment,
       };
     };
 
-    // 1. Explicit selection from search on this page
-    if (activeAppId) {
-      if (activeAppId.toLowerCase() === sharedApp.id.toLowerCase()) {
-        return sharedVendorApp;
-      }
-      const found = storedApplications.find(
-        (a) =>
-          a.id.toLowerCase() === activeAppId.toLowerCase() ||
-          a.applicationNumber.toLowerCase() === activeAppId.toLowerCase()
-      );
-      if (found) return mergeSharedIfTarget(found);
+    const normId = activeAppId.trim().toLowerCase();
+
+    // 1. Search in stored applications
+    const found = storedApplications.find(
+      (a) =>
+        a.id.trim().toLowerCase() === normId ||
+        (a.applicationNumber && a.applicationNumber.trim().toLowerCase() === normId)
+    );
+    if (found) {
+      if (isApplicationDeleted(found.id)) return null;
+      return mergeSharedIfTarget(found);
     }
 
-    // 2. Query parameter (?appNumber=... or ?id=...)
-    if (queryParam) {
-      if (queryParam.toLowerCase() === sharedApp.id.toLowerCase()) {
-        return sharedVendorApp;
-      }
-      const found = storedApplications.find(
-        (a) =>
-          a.id.toLowerCase() === queryParam.toLowerCase() ||
-          a.applicationNumber.toLowerCase() === queryParam.toLowerCase()
-      );
-      if (found) return mergeSharedIfTarget(found);
+    // 2. Search in shared vendor application
+    if (
+      sharedApp.id.trim().toLowerCase() === normId ||
+      (sharedApp.applicationNumber && sharedApp.applicationNumber.trim().toLowerCase() === normId)
+    ) {
+      if (isApplicationDeleted(sharedApp.id)) return null;
+      return sharedVendorApp;
     }
 
-    // 3. Stored vendor app number from recent submission
-    if (typeof window !== "undefined") {
-      const savedNum = localStorage.getItem("bvr_current_vendor_app_number");
-      if (savedNum) {
-        if (savedNum.toLowerCase() === sharedApp.id.toLowerCase()) {
-          return sharedVendorApp;
-        }
-        const found = storedApplications.find(
-          (a) =>
-            a.id.toLowerCase() === savedNum.toLowerCase() ||
-            a.applicationNumber.toLowerCase() === savedNum.toLowerCase()
-        );
-        if (found) return mergeSharedIfTarget(found);
-      }
-    }
-
-    // 4. Default to shared vendor app so Track Status directly tracks live state
-    return sharedVendorApp;
-  }, [activeAppId, queryParam, storedApplications, sharedApp, sharedVendorApp]);
+    return null;
+  }, [activeAppId, storedApplications, sharedApp, sharedVendorApp]);
 
   const handleCopy = () => {
     if (!activeApp) return;
@@ -473,35 +529,140 @@ function ApplicationStatusContent() {
     }
   };
 
-  const handleSearchSubmit = (e: React.FormEvent) => {
+  const handleResubmitProofSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setLookupError(null);
-    const q = searchQuery.trim();
-    if (!q) return;
+    if (!activeApp) return;
 
-    const matchStored = storedApplications.find(
-      (a) =>
-        a.id.toLowerCase() === q.toLowerCase() ||
-        a.applicationNumber.toLowerCase() === q.toLowerCase()
+    if (!resubmitFileDataUrl) {
+      setResubmitFileError("Please upload your payment receipt before submitting.");
+      return;
+    }
+
+    if (!resubmitTxRef.trim()) {
+      setResubmitFileError("Please enter your transaction or reference number.");
+      return;
+    }
+
+    setIsSubmittingProof(true);
+
+    const formattedDate = new Date().toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+
+    const currentFee = activeApp.payment?.assessedAmount ?? 1450;
+    const parsedAmount = Number(resubmitAmountPaid) || currentFee;
+
+    const updatedPayment: PaymentInformation = {
+      ...(activeApp.payment || {
+        assessedAmount: currentFee,
+        currency: "PHP",
+        feeBreakdown: [],
+        assessmentStatus: "pending_verification",
+      }),
+      status: "pending_verification",
+      amountPaid: parsedAmount,
+      paymentMethod: resubmitMethodName,
+      methodName: resubmitMethodName,
+      paymentMethodCategory: resubmitCategory,
+      transactionReference: resubmitTxRef.trim(),
+      paymentDate: resubmitPaymentDate || formattedDate,
+      receiptUrl: resubmitFileDataUrl,
+      receiptFilename: resubmitFilename || "payment-receipt",
+      receiptFileType: resubmitFileType,
+      receiptFileSize: resubmitFileSize,
+      receiptUploadedAt: formattedDate,
+      rejectionReason: undefined,
+    };
+
+    updateApplication(activeApp.id, {
+      payment: updatedPayment,
+      paymentStatus: "pending_verification",
+      amountPaid: parsedAmount,
+    });
+
+    const isTarget =
+      activeApp.id.toLowerCase() === sharedApp.id.toLowerCase() ||
+      activeApp.applicationNumber?.toLowerCase() === sharedApp.id.toLowerCase() ||
+      activeApp.id.toLowerCase() === (sharedApp.applicationNumber || "").toLowerCase();
+
+    if (isTarget) {
+      saveSharedApplication({
+        ...sharedApp,
+        payment: updatedPayment,
+        paymentStatus: "pending_verification",
+        amountPaid: parsedAmount,
+      });
+    }
+
+    setIsSubmittingProof(false);
+    setResubmitModalOpen(false);
+    setResubmitSuccessMessage(
+      "Proof of payment submitted successfully! Your receipt is now pending administrator verification."
     );
-    if (matchStored) {
-      setActiveAppId(matchStored.applicationNumber || matchStored.id);
-      setSearchOpen(false);
-      setSearchQuery("");
+  };
+
+  const handleSearchSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isSearching) return;
+
+    const trimmed = searchQuery.trim();
+    if (!trimmed) {
+      setActiveAppId(null);
+      setLookupError("Please enter your application reference number.");
       return;
     }
 
-    if (
-      q.toLowerCase() === sharedApp.id.toLowerCase() ||
-      q.toLowerCase() === (sharedApp.applicationNumber || "").toLowerCase()
-    ) {
-      setActiveAppId(sharedApp.applicationNumber || sharedApp.id);
-      setSearchOpen(false);
-      setSearchQuery("");
-      return;
-    }
+    setIsSearching(true);
+    setLookupError(null);
+    setActiveAppId(null); // Clear any previous application details immediately
 
-    setLookupError(`Application "${q}" not found. Please verify the application number.`);
+    try {
+      // Simulate realistic async lookup response time and display loading indicator
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      const normalized = trimmed.toLowerCase();
+
+      // Check stored applications
+      const foundInStore = storedApplications.find(
+        (a) =>
+          a.id.trim().toLowerCase() === normalized ||
+          (a.applicationNumber && a.applicationNumber.trim().toLowerCase() === normalized)
+      );
+
+      if (foundInStore && !isApplicationDeleted(foundInStore.id)) {
+        setActiveAppId(foundInStore.applicationNumber || foundInStore.id);
+        setLookupError(null);
+        setSearchOpen(false);
+        return;
+      }
+
+      // Check shared application
+      const matchesShared =
+        sharedApp.id.trim().toLowerCase() === normalized ||
+        (sharedApp.applicationNumber && sharedApp.applicationNumber.trim().toLowerCase() === normalized);
+
+      if (matchesShared && !isApplicationDeleted(sharedApp.id)) {
+        setActiveAppId(sharedApp.applicationNumber || sharedApp.id);
+        setLookupError(null);
+        setSearchOpen(false);
+        return;
+      }
+
+      // If no matching application was found
+      setActiveAppId(null);
+      setLookupError(
+        "No application was found for this reference number. Please check the number and try again."
+      );
+    } catch {
+      setActiveAppId(null);
+      setLookupError(
+        "No application was found for this reference number. Please check the number and try again."
+      );
+    } finally {
+      setIsSearching(false);
+    }
   };
 
   // If no application has been submitted or found yet
@@ -562,11 +723,10 @@ function ApplicationStatusContent() {
                 </div>
                 <div>
                   <CardTitle className="text-xl sm:text-2xl font-extrabold text-slate-900">
-                    Track Vendor Application
+                    Track Your Application
                   </CardTitle>
                   <p className="text-xs sm:text-sm text-slate-600 mt-1.5 max-w-md mx-auto leading-relaxed">
-                    No active application was found for this session. Enter your official
-                    application number to track its real-time review progress, or submit a new registration.
+                    Enter your application reference number to check the status of your business registration.
                   </p>
                 </div>
               </CardHeader>
@@ -579,13 +739,28 @@ function ApplicationStatusContent() {
                       <Input
                         type="text"
                         value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        placeholder="Enter Application No. (e.g., BVR-2026-001249)"
+                        onChange={(e) => {
+                          setSearchQuery(e.target.value);
+                          if (lookupError) setLookupError(null);
+                        }}
+                        placeholder="Enter your application reference number"
                         className="pl-9 text-xs sm:text-sm"
+                        disabled={isSearching}
                       />
                     </div>
-                    <Button type="submit" className="font-semibold text-xs sm:text-sm cursor-pointer">
-                      Track Status
+                    <Button
+                      type="submit"
+                      disabled={isSearching}
+                      className="font-semibold text-xs sm:text-sm cursor-pointer min-w-[160px]"
+                    >
+                      {isSearching ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          <span>Searching...</span>
+                        </>
+                      ) : (
+                        "Search Application"
+                      )}
                     </Button>
                   </div>
 
@@ -647,6 +822,11 @@ function ApplicationStatusContent() {
       !activeApp.documents[0].isSkippedId
   );
   const govIdDoc = activeApp.documents?.[0];
+
+  const paymentInfo = activeApp.payment;
+  const paymentBadge = getPaymentStatusBadgeConfig(paymentInfo?.status || "unpaid");
+  const assessedAmount = paymentInfo?.assessedAmount ?? 650;
+  const amountPaid = paymentInfo?.amountPaid ?? 0;
 
   const statusConfig = {
     draft: {
@@ -770,9 +950,24 @@ function ApplicationStatusContent() {
           <div className="flex items-center gap-2 sm:gap-3">
             <button
               type="button"
-              onClick={() => setSearchOpen(!searchOpen)}
+              onClick={() => {
+                setActiveAppId(null);
+                setSearchQuery("");
+                setLookupError(null);
+              }}
               className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-700 hover:text-blue-700 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
               title="Track a different application"
+            >
+              <FileSearch className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Track Another</span>
+              <span className="sm:hidden">New Search</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setSearchOpen(!searchOpen)}
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-700 hover:text-blue-700 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
+              title="Look up application"
             >
               <Search className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Look Up Application</span>
@@ -802,14 +997,30 @@ function ApplicationStatusContent() {
                 <Input
                   type="text"
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Enter Application No. (e.g., BVR-2026-001249)"
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    if (lookupError) setLookupError(null);
+                  }}
+                  placeholder="Enter your application reference number"
                   className="pl-9 text-xs sm:text-sm"
                   autoFocus
+                  disabled={isSearching}
                 />
               </div>
-              <Button type="submit" size="sm" className="font-semibold text-xs cursor-pointer">
-                Track
+              <Button
+                type="submit"
+                size="sm"
+                disabled={isSearching}
+                className="font-semibold text-xs cursor-pointer min-w-[140px]"
+              >
+                {isSearching ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                    Searching...
+                  </>
+                ) : (
+                  "Search Application"
+                )}
               </Button>
               <Button
                 type="button"
@@ -858,6 +1069,11 @@ function ApplicationStatusContent() {
                     <span>Verification: Pending</span>
                   </Badge>
                 )}
+                {/* Payment Status Badge */}
+                <Badge className={cn("text-xs font-bold uppercase border inline-flex items-center gap-1.5 py-0.5", paymentBadge.badgeClass)}>
+                  <CreditCard className="w-3.5 h-3.5" />
+                  <span>Payment: {paymentBadge.label}</span>
+                </Badge>
               </div>
 
               {/* Application Number & Copy Button */}
@@ -1534,6 +1750,264 @@ function ApplicationStatusContent() {
                   )}
                 </CardContent>
               </Card>
+
+              {/* Fee Assessment & Payment Details Card */}
+              <Card className="border border-slate-200/90 shadow-2xs rounded-xl overflow-hidden md:col-span-2">
+                <CardHeader className="bg-slate-50/70 p-4 border-b border-slate-200/70 flex flex-row items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <CreditCard className="w-4 h-4 text-blue-700" />
+                    <CardTitle className="text-sm font-bold text-slate-900">
+                      Fee Assessment &amp; Payment Verification
+                    </CardTitle>
+                  </div>
+                  <Badge className={cn("text-xs font-bold border", paymentBadge.badgeClass)}>
+                    <span className={cn("inline-block w-1.5 h-1.5 rounded-full mr-1.5", paymentBadge.dotColor)} />
+                    {paymentBadge.label}
+                  </Badge>
+                </CardHeader>
+                <CardContent className="p-4 sm:p-5 space-y-4">
+                  {/* Resubmit Success Notice */}
+                  {resubmitSuccessMessage && (
+                    <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-300 text-xs text-emerald-950 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 font-medium">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                        <span>{resubmitSuccessMessage}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setResubmitSuccessMessage(null)}
+                        className="text-xs text-emerald-800 hover:text-emerald-950 font-bold"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  )}
+
+                  {/* 4 Stat Overview Grid */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1">
+                      <span className="text-[11px] text-slate-500 font-medium block uppercase tracking-wider">Assessed Fee Total</span>
+                      <p className="font-extrabold text-base text-slate-900 font-mono">
+                        {formatPhpCurrency(assessedAmount)}
+                      </p>
+                      <span className="text-[10px] text-slate-400 block">Butuan City Tax Ord. No. 132</span>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1">
+                      <span className="text-[11px] text-slate-500 font-medium block uppercase tracking-wider">Confirmed Amount Paid</span>
+                      <p className={cn("font-extrabold text-base font-mono", amountPaid > 0 ? "text-emerald-700" : "text-slate-800")}>
+                        {formatPhpCurrency(amountPaid)}
+                      </p>
+                      <span className="text-[10px] text-slate-400 block">
+                        {amountPaid >= assessedAmount ? "Fully Settled" : amountPaid > 0 ? "Partial Settlement" : "Awaiting payment verification"}
+                      </span>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1">
+                      <span className="text-[11px] text-slate-500 font-medium block uppercase tracking-wider">Payment Channel</span>
+                      <p className="font-bold text-slate-900 truncate">
+                        {paymentInfo?.paymentMethod || paymentInfo?.methodName || "E-Wallet / CTO Cashier"}
+                      </p>
+                      <span className="text-[10px] text-blue-600 font-medium capitalize block">
+                        Official Channel
+                      </span>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1">
+                      <span className="text-[11px] text-slate-500 font-medium block uppercase tracking-wider">Assessment Reference</span>
+                      <p className="font-mono font-bold text-slate-900 truncate" title={paymentInfo?.transactionReference}>
+                        {paymentInfo?.transactionReference || `PAY-${applicationNumber}`}
+                      </p>
+                      <span className="text-[10px] text-slate-400 block">LGU tracking identifier</span>
+                    </div>
+                  </div>
+
+                  {/* Status-specific Callout Banner */}
+                  {paymentBadge.label === "Verified" ? (
+                    <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-300 text-xs text-emerald-950 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="flex items-center gap-2.5">
+                        <ShieldCheck className="w-4 h-4 text-emerald-700 shrink-0" />
+                        <div>
+                          <span className="font-bold text-emerald-900 block">Payment Confirmed &amp; Verified</span>
+                          <span className="text-[11px] text-emerald-800">
+                            Your payment has been verified by the City Government of Butuan Licensing Office. Confirmed amount: {formatPhpCurrency(amountPaid || assessedAmount)}.
+                          </span>
+                        </div>
+                      </div>
+                      <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 self-start sm:self-auto shrink-0 font-semibold text-[11px]">
+                        Verified
+                      </Badge>
+                    </div>
+                  ) : paymentBadge.label === "Rejected" ? (
+                    <div className="p-4 rounded-xl bg-rose-50 border border-rose-300 text-xs text-rose-950 space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 font-bold text-rose-900">
+                          <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                          <span>Proof of Payment Rejected</span>
+                        </div>
+                        <Badge className="bg-rose-100 text-rose-800 border-rose-300 font-semibold text-[11px]">
+                          Rejected
+                        </Badge>
+                      </div>
+                      <p className="text-[11px] text-rose-900 font-medium leading-relaxed pl-6">
+                        <strong>Reason:</strong> &ldquo;{paymentInfo?.rejectionReason || "The submitted receipt could not be verified or transaction reference is missing."}&rdquo;
+                      </p>
+                      <div className="pl-6 pt-1 flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-t border-rose-200">
+                        <span className="text-[11px] text-rose-700 font-medium">
+                          Instructions: Please check your transaction reference, review payment instructions, and upload a corrected receipt.
+                        </span>
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={() => {
+                            setResubmitAmountPaid(String(assessedAmount));
+                            setResubmitTxRef(paymentInfo?.transactionReference || "");
+                            setResubmitModalOpen(true);
+                          }}
+                          className="bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs h-8 px-3.5 rounded-lg cursor-pointer self-start sm:self-auto"
+                        >
+                          <Upload className="w-3.5 h-3.5 mr-1" />
+                          Resubmit Proof of Payment
+                        </Button>
+                      </div>
+                    </div>
+                  ) : paymentBadge.label === "Pending Verification" ? (
+                    <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-300 text-xs text-amber-950 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="flex items-center gap-2.5">
+                        <Clock className="w-4 h-4 text-amber-700 shrink-0" />
+                        <div>
+                          <span className="font-bold text-amber-900 block">Proof of Payment Awaiting Admin Review</span>
+                          <span className="text-[11px] text-amber-800">
+                            Your payment receipt has been submitted and is waiting for administrator review. City treasury officers will confirm the transaction against official LGU accounts.
+                          </span>
+                        </div>
+                      </div>
+                      <Badge className="bg-amber-100 text-amber-900 border-amber-300 self-start sm:self-auto shrink-0 font-semibold text-[11px]">
+                        Pending Verification
+                      </Badge>
+                    </div>
+                  ) : (
+                    <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-300 text-xs text-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-center gap-2.5">
+                        <AlertTriangle className="w-4 h-4 text-slate-600 shrink-0" />
+                        <div>
+                          <span className="font-bold text-slate-900 block">No Proof of Payment Submitted</span>
+                          <span className="text-[11px] text-slate-600">
+                            Your registration fee has been assessed. Follow payment instructions below and upload your receipt proof to proceed with review.
+                          </span>
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => {
+                          setResubmitAmountPaid(String(assessedAmount));
+                          setResubmitTxRef(paymentInfo?.transactionReference || "");
+                          setResubmitModalOpen(true);
+                        }}
+                        className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs h-8 px-3.5 rounded-lg cursor-pointer shrink-0"
+                      >
+                        <Upload className="w-3.5 h-3.5 mr-1" />
+                        Upload Proof of Payment
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* Uploaded Receipt Details Card */}
+                  {(paymentInfo?.receiptUrl || paymentInfo?.receiptFilename) && (
+                    <div className="p-3.5 rounded-xl bg-white border border-slate-200 space-y-2">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-bold text-slate-900 uppercase tracking-wider text-[11px]">
+                          Attached Proof of Payment
+                        </span>
+                        {paymentInfo?.receiptUploadedAt && (
+                          <span className="text-[11px] text-slate-500">
+                            Uploaded {paymentInfo.receiptUploadedAt}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-2.5 rounded-lg bg-slate-50 border border-slate-200/80">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <Receipt className="w-5 h-5 text-blue-700 shrink-0" />
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-slate-900 truncate font-mono">
+                              {paymentInfo.receiptFilename || "payment-receipt"}
+                            </p>
+                            <p className="text-[10px] text-slate-500">
+                              {paymentInfo.receiptFileType || "Receipt Document"} • Ref: <span className="font-mono font-semibold text-slate-700">{paymentInfo.transactionReference || applicationNumber}</span>
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                          {paymentInfo.receiptUrl && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setViewReceiptModalOpen(true)}
+                              className="text-xs font-semibold h-7 px-2.5 text-blue-700 border-blue-200 hover:bg-blue-50"
+                            >
+                              <Eye className="w-3 h-3 mr-1" />
+                              View
+                            </Button>
+                          )}
+                          {(paymentBadge.label === "Rejected" || paymentBadge.label === "Unpaid") && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              onClick={() => {
+                                setResubmitAmountPaid(String(assessedAmount));
+                                setResubmitTxRef(paymentInfo?.transactionReference || "");
+                                setResubmitModalOpen(true);
+                              }}
+                              className="text-xs font-semibold h-7 px-2.5 bg-blue-600 hover:bg-blue-700 text-white"
+                            >
+                              Replace Receipt
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Regulatory Fee Breakdown */}
+                  {paymentInfo?.feeBreakdown && paymentInfo.feeBreakdown.length > 0 && (
+                    <div className="border border-slate-200/90 rounded-xl overflow-hidden text-xs">
+                      <div className="bg-slate-100/80 px-3.5 py-2 font-bold text-slate-700 border-b border-slate-200 flex justify-between">
+                        <span>Regulatory Fee Breakdown (City Tax Ordinance No. 132)</span>
+                        <span>Amount (PHP)</span>
+                      </div>
+                      <div className="divide-y divide-slate-100 bg-white">
+                        {paymentInfo.feeBreakdown.map((item) => (
+                          <div key={item.id} className="px-3.5 py-2 flex justify-between items-center hover:bg-slate-50/50">
+                            <div>
+                              <p className="font-semibold text-slate-800">{item.name}</p>
+                              {item.code && <p className="text-[10px] text-slate-400 font-mono">{item.code}</p>}
+                            </div>
+                            <span className="font-mono font-bold text-slate-900">{formatPhpCurrency(item.amount)}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="bg-slate-50 px-3.5 py-2.5 border-t border-slate-200 flex justify-between items-center font-bold text-slate-900">
+                        <span>Total Assessed Fees</span>
+                        <span className="font-mono text-blue-700 text-sm font-extrabold">{formatPhpCurrency(assessedAmount)}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Policy Notes */}
+                  <div className="p-3.5 rounded-xl bg-blue-50/70 border border-blue-200/80 text-xs space-y-1.5">
+                    <div className="flex items-center gap-1.5 text-blue-950 font-bold">
+                      <Receipt className="w-4 h-4 text-blue-700 shrink-0" />
+                      <span>Payment Verification &amp; Registration Approval Policy</span>
+                    </div>
+                    <p className="text-blue-900 leading-relaxed text-[11px]">
+                      <strong>Important:</strong> Payment verification and registration approval are separate processes. Uploading a receipt or having a verified payment does not automatically approve your vendor registration. Approval is granted independently upon administrative inspection and satisfaction of municipal requirements.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
           </div>
 
@@ -1551,7 +2025,21 @@ function ApplicationStatusContent() {
               <span suppressHydrationWarning>{backLabel}</span>
             </Link>
 
-            <div className="flex items-center gap-2 w-full sm:w-auto">
+            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setActiveAppId(null);
+                  setSearchQuery("");
+                  setLookupError(null);
+                }}
+                className="w-full sm:w-auto text-xs font-semibold cursor-pointer gap-1.5"
+              >
+                <FileSearch className="w-3.5 h-3.5" />
+                Track Another Application
+              </Button>
+
               <Button
                 type="button"
                 variant="outline"
@@ -1574,7 +2062,413 @@ function ApplicationStatusContent() {
             </div>
           </div>
         </div>
-      </main>
+      {/* ================= RESUBMIT PAYMENT PROOF DIALOG ================= */}
+      <Dialog open={resubmitModalOpen} onOpenChange={setResubmitModalOpen}>
+        <DialogContent className="sm:max-w-xl bg-white rounded-2xl p-6 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-800 flex items-center justify-center mb-1">
+              <Upload className="w-5 h-5 text-blue-600" />
+            </div>
+            <DialogTitle className="text-lg font-bold text-slate-900">
+              Upload Proof of Payment
+            </DialogTitle>
+            <DialogDescription className="text-xs sm:text-sm text-slate-600">
+              Review official municipal payment instructions and submit your transaction receipt for administrator verification.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleResubmitProofSubmit} className="space-y-4 py-2">
+            {/* Payment Instructions Accordion / Selector */}
+            <div className="space-y-2">
+              <span className="text-xs font-bold text-slate-700 uppercase tracking-wider block">
+                1. Select Payment Method &amp; View Instructions
+              </span>
+
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setResubmitCategory("e_wallet");
+                    setResubmitMethodName("Maya / GCash (Official E-Wallet)");
+                  }}
+                  className={cn(
+                    "p-3 rounded-xl border text-left transition-all cursor-pointer flex items-center gap-2",
+                    resubmitCategory === "e_wallet"
+                      ? "border-blue-500 bg-blue-50/70 text-blue-900 font-bold ring-2 ring-blue-500/20"
+                      : "border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700"
+                  )}
+                >
+                  <Wallet className="w-4 h-4 text-blue-600 shrink-0" />
+                  <div>
+                    <span className="block leading-tight">E-Wallet</span>
+                    <span className="text-[10px] font-normal text-slate-500">Maya / GCash</span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setResubmitCategory("bank_transfer");
+                    setResubmitMethodName("Landbank Bank Transfer / Link.BizPortal");
+                  }}
+                  className={cn(
+                    "p-3 rounded-xl border text-left transition-all cursor-pointer flex items-center gap-2",
+                    resubmitCategory === "bank_transfer"
+                      ? "border-blue-500 bg-blue-50/70 text-blue-900 font-bold ring-2 ring-blue-500/20"
+                      : "border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700"
+                  )}
+                >
+                  <Landmark className="w-4 h-4 text-blue-600 shrink-0" />
+                  <div>
+                    <span className="block leading-tight">Bank Transfer</span>
+                    <span className="text-[10px] font-normal text-slate-500">Landbank</span>
+                  </div>
+                </button>
+              </div>
+
+              {/* Instructions Detail Card */}
+              {resubmitCategory === "e_wallet" ? (
+                <div className="p-3.5 rounded-xl bg-blue-50/70 border border-blue-200 space-y-2 text-xs text-blue-950">
+                  <div className="flex items-center justify-between font-bold text-blue-900">
+                    <span>E-Wallet Official Account Details:</span>
+                    <span className="font-mono text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded text-[11px]">
+                      {formatPhpCurrency(assessedAmount)}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 p-2.5 rounded-lg bg-white border border-blue-200/80 text-[11px]">
+                    <div>
+                      <span className="text-slate-500 block">Account Name:</span>
+                      <strong className="text-slate-900 font-mono">{LGU_EWALLET_INSTRUCTIONS.accountName}</strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 block">E-Wallet Number:</span>
+                      <strong className="text-slate-900 font-mono">{LGU_EWALLET_INSTRUCTIONS.accountNumber}</strong>
+                    </div>
+                  </div>
+                  {/* Authentic QR placeholder */}
+                  <div className="p-2.5 rounded-lg border border-dashed border-blue-300 bg-blue-100/50 text-center space-y-1">
+                    <QrCode className="w-5 h-5 mx-auto text-blue-700" />
+                    <p className="text-[11px] font-semibold text-blue-900">
+                      Official Payment QR Code Placeholder
+                    </p>
+                    <p className="text-[10px] text-blue-700 leading-tight">
+                      [ Official LGU Butuan E-Wallet QR Code Placeholder — Administrator can upload official verified QR code image here ]
+                    </p>
+                  </div>
+                  <p className="text-[10px] text-blue-800 leading-relaxed">
+                    Instructions: Confirm the recipient name (&ldquo;LGU BUTUAN&rdquo;) and assessed amount before sending payment, then take a screenshot or save your transaction receipt.
+                  </p>
+                </div>
+              ) : (
+                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2 text-xs text-slate-800">
+                  <div className="flex items-center justify-between font-bold text-slate-900">
+                    <span>Bank Transfer Official Details:</span>
+                    <span className="font-mono text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded text-[11px]">
+                      {formatPhpCurrency(assessedAmount)}
+                    </span>
+                  </div>
+                  <div className="space-y-1.5 p-2.5 rounded-lg bg-white border border-slate-200 text-[11px]">
+                    <div>
+                      <span className="text-slate-500 block">Bank Name:</span>
+                      <strong className="text-slate-900">{LGU_BANK_TRANSFER_INSTRUCTIONS.bankName}</strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 block">Account Name:</span>
+                      <strong className="text-slate-900 font-mono">{LGU_BANK_TRANSFER_INSTRUCTIONS.accountName}</strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 block">Account Number:</span>
+                      <strong className="text-amber-800 italic">{LGU_BANK_TRANSFER_INSTRUCTIONS.accountNumber}</strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 block">Required Reference / Description:</span>
+                      <strong className="text-blue-700 font-mono">{applicationNumber}</strong>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-slate-600 leading-relaxed">
+                    Instructions: Transfer via Landbank Link.BizPortal or bank transfer. Use your Application Reference ({applicationNumber}) in the transaction remarks, and save the transfer confirmation receipt.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* 2. Drag and Drop Upload Box */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-700 uppercase tracking-wider block">
+                2. Upload Proof of Payment (JPG, JPEG, PNG, or PDF, max 5MB) <span className="text-rose-500">*</span>
+              </label>
+
+              {resubmitFileDataUrl ? (
+                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    {resubmitFileType?.includes("pdf") || resubmitFilename.toLowerCase().endsWith(".pdf") ? (
+                      <div className="w-12 h-12 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center font-bold text-xs shrink-0 shadow-2xs">
+                        PDF
+                      </div>
+                    ) : (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={resubmitFileDataUrl}
+                        alt="Receipt Preview"
+                        className="w-12 h-12 rounded-xl object-cover border border-slate-200 shrink-0"
+                      />
+                    )}
+                    <div className="min-w-0 space-y-0.5">
+                      <p className="text-xs font-bold text-slate-900 truncate font-mono">
+                        {resubmitFilename}
+                      </p>
+                      <p className="text-[11px] text-slate-500">
+                        {(resubmitFileSize / 1024).toFixed(0)} KB • Ready to submit
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                    <label className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-100 cursor-pointer text-slate-700">
+                      <span>Replace</span>
+                      <input
+                        type="file"
+                        accept=".jpg,.jpeg,.png,.pdf"
+                        onChange={(e) => {
+                          if (e.target.files?.[0]) handleResubmitFileSelect(e.target.files[0]);
+                        }}
+                        className="hidden"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setResubmitFile(null);
+                        setResubmitFileDataUrl(null);
+                        setResubmitFilename("");
+                        setResubmitFileType("");
+                        setResubmitFileSize(0);
+                      }}
+                      className="text-xs font-semibold px-2.5 py-1.5 rounded-lg text-rose-600 hover:bg-rose-50 cursor-pointer"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setIsDraggingOver(true);
+                  }}
+                  onDragLeave={() => setIsDraggingOver(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setIsDraggingOver(false);
+                    if (e.dataTransfer.files?.[0]) {
+                      handleResubmitFileSelect(e.dataTransfer.files[0]);
+                    }
+                  }}
+                  className={cn(
+                    "p-6 border-2 border-dashed rounded-xl text-center transition-colors cursor-pointer space-y-2",
+                    isDraggingOver
+                      ? "border-blue-500 bg-blue-50/60"
+                      : "border-slate-300 bg-slate-50 hover:bg-slate-100/70"
+                  )}
+                  onClick={() => {
+                    document.getElementById("resubmit-file-input")?.click();
+                  }}
+                >
+                  <Upload className="w-8 h-8 text-slate-400 mx-auto" />
+                  <div>
+                    <p className="text-xs font-bold text-slate-800">
+                      Drag &amp; drop your receipt file here, or click to browse
+                    </p>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Accepts JPG, JPEG, PNG, and PDF (Maximum file size: 5MB)
+                    </p>
+                  </div>
+                  <input
+                    id="resubmit-file-input"
+                    type="file"
+                    accept=".jpg,.jpeg,.png,.pdf"
+                    onChange={(e) => {
+                      if (e.target.files?.[0]) handleResubmitFileSelect(e.target.files[0]);
+                    }}
+                    className="hidden"
+                  />
+                  <div className="pt-1">
+                    <span className="inline-block px-3 py-1 bg-white border border-slate-300 text-slate-700 text-xs font-semibold rounded-lg shadow-2xs">
+                      Choose File
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {resubmitFileError && (
+                <p className="text-[11px] text-rose-600 font-semibold flex items-center gap-1 pt-0.5">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  <span>{resubmitFileError}</span>
+                </p>
+              )}
+            </div>
+
+            {/* 3. Transaction Fields */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label htmlFor="resubmit-tx-ref" className="text-xs font-semibold text-slate-700 block">
+                  Transaction / Reference Number <span className="text-rose-500">*</span>
+                </label>
+                <Input
+                  id="resubmit-tx-ref"
+                  type="text"
+                  placeholder="e.g. 1029384756 or LBP-98214"
+                  value={resubmitTxRef}
+                  onChange={(e) => setResubmitTxRef(e.target.value)}
+                  className="h-9 text-xs sm:text-sm font-mono bg-slate-50"
+                  required
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label htmlFor="resubmit-amount-paid" className="text-xs font-semibold text-slate-700 block">
+                  Amount Paid (PHP)
+                </label>
+                <Input
+                  id="resubmit-amount-paid"
+                  type="number"
+                  placeholder={String(assessedAmount)}
+                  value={resubmitAmountPaid || String(assessedAmount)}
+                  onChange={(e) => setResubmitAmountPaid(e.target.value)}
+                  className="h-9 text-xs sm:text-sm font-mono bg-slate-50"
+                />
+              </div>
+            </div>
+
+            {/* Disclaimer & Policy Notice */}
+            <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-950 text-xs space-y-1">
+              <div className="flex items-center gap-1.5 font-bold text-amber-900">
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                <span>Verification Disclaimer:</span>
+              </div>
+              <p className="text-[11px] text-amber-800 leading-relaxed">
+                Uploading a receipt does not automatically verify payment or approve your registration. An authorized municipal administrator must verify the transaction against official LGU accounts before registration can proceed.
+              </p>
+            </div>
+
+            <DialogFooter className="gap-2 sm:gap-0 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setResubmitModalOpen(false)}
+                className="text-xs font-semibold rounded-xl"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={isSubmittingProof || !resubmitFileDataUrl || !resubmitTxRef.trim()}
+                className="text-xs font-semibold bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl cursor-pointer"
+              >
+                {isSubmittingProof ? "Submitting..." : "Submit Proof for Review"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* ================= VIEW RECEIPT DIALOG ================= */}
+      <Dialog open={viewReceiptModalOpen} onOpenChange={setViewReceiptModalOpen}>
+        <DialogContent className="sm:max-w-2xl bg-white rounded-2xl p-6 shadow-2xl border border-slate-200">
+          <DialogHeader>
+            <DialogTitle className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
+              <Receipt className="w-5 h-5 text-blue-700" />
+              <span>Proof of Payment — {paymentInfo?.receiptFilename || "Receipt Document"}</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-500">
+              Assessment Reference: {paymentInfo?.transactionReference || applicationNumber}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-2 space-y-3">
+            <div className="rounded-xl border border-slate-200 bg-slate-950 p-3 flex items-center justify-center min-h-[280px] max-h-[60vh] overflow-auto">
+              {paymentInfo?.receiptUrl ? (
+                paymentInfo.receiptFileType?.includes("pdf") || (paymentInfo.receiptFilename && paymentInfo.receiptFilename.toLowerCase().endsWith(".pdf")) ? (
+                  <div className="text-center text-white p-6 space-y-3">
+                    <div className="w-16 h-16 rounded-2xl bg-rose-600 text-white flex items-center justify-center font-bold text-xl mx-auto shadow-lg">
+                      PDF
+                    </div>
+                    <div>
+                      <p className="font-semibold text-sm">{paymentInfo.receiptFilename}</p>
+                      <p className="text-xs text-slate-400">PDF Document</p>
+                    </div>
+                    <div className="pt-2">
+                      <a
+                        href={paymentInfo.receiptUrl}
+                        download={paymentInfo.receiptFilename || "payment-receipt.pdf"}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={cn(buttonVariants({ variant: "default" }), "bg-blue-600 hover:bg-blue-700 text-white text-xs")}
+                      >
+                        <Download className="w-3.5 h-3.5 mr-1.5" />
+                        Download &amp; Open PDF
+                      </a>
+                    </div>
+                  </div>
+                ) : (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={paymentInfo.receiptUrl}
+                    alt="Proof of Payment"
+                    className="max-h-[55vh] max-w-full object-contain rounded-lg"
+                  />
+                )
+              ) : (
+                <div className="text-center text-slate-400 p-8 space-y-2">
+                  <Receipt className="w-12 h-12 mx-auto text-slate-600" />
+                  <p className="text-sm font-semibold text-slate-300">No Receipt Preview Available</p>
+                </div>
+              )}
+            </div>
+
+            <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/90 text-xs flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <span className="text-slate-500">Method:</span>{" "}
+                <span className="font-semibold text-slate-900">{paymentInfo?.paymentMethod || "Official Channel"}</span>
+              </div>
+              <div>
+                <span className="text-slate-500">Reference:</span>{" "}
+                <span className="font-mono font-bold text-slate-900">{paymentInfo?.transactionReference || applicationNumber}</span>
+              </div>
+              <div>
+                <span className="text-slate-500">Uploaded:</span>{" "}
+                <span className="text-slate-700">{paymentInfo?.receiptUploadedAt || "Recently"}</span>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="flex flex-row items-center justify-between gap-2 sm:gap-0 pt-1">
+            {paymentInfo?.receiptUrl ? (
+              <a
+                href={paymentInfo.receiptUrl}
+                download={paymentInfo.receiptFilename || `receipt-${applicationNumber}.jpg`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={cn(buttonVariants({ variant: "outline", size: "sm" }), "text-xs font-semibold gap-1.5")}
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Download Receipt</span>
+              </a>
+            ) : <div />}
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setViewReceiptModalOpen(false)}
+              className="text-xs font-semibold rounded-xl"
+            >
+              Close Preview
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </main>
 
       {/* Footer */}
       <footer className="py-6 border-t border-slate-200/80 bg-white text-center text-xs text-slate-500">

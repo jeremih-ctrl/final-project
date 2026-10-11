@@ -20,419 +20,56 @@ export const APPLICATIONS_STORE_UPDATED_EVENT = "bvr_applications_store_updated"
 export const DELETED_APPLICATIONS_STORAGE_KEY = "bvr_deleted_applications";
 export const DELETED_APPLICATIONS_UPDATED_EVENT = "bvr_deleted_applications_updated";
 
-// ─── Initial Seed Applications (Used when localStorage is empty) ──────────────
+// ─── Initial Seed Applications & Demo Sanitization ────────────────────────────
 
+export const MOCK_APPLICATION_IDS = new Set([
+  "bvr-2026-001248",
+  "bvr-2026-001247",
+  "bvr-2026-001246",
+  "bvr-2026-001245",
+  "bvr-2026-001244",
+  "bvr-2026-001243",
+  "bvr-2026-001242",
+  "bvr-2026-001241",
+]);
+
+export const MOCK_BUSINESS_NAMES = new Set([
+  "montilla street produce & snacks",
+  "urduja dry goods & general merchandise",
+  "barangay dagohoy carinderia & catering",
+  "agusan river fresh fish",
+  "golden tara refreshments",
+  "butuan balut & penoy express",
+  "kadayawan fruit stand",
+  "maningning tailoring & repair",
+  "maria's sari-sari store",
+]);
+
+/**
+ * Identify demo, mock, placeholder, or invalid/incomplete applications.
+ */
+export function isDemoOrMockApplication(
+  app: Partial<VendorApplication> | null | undefined
+): boolean {
+  if (!app) return true;
+  const id = (app.id || app.applicationNumber || "").trim().toLowerCase();
+  if (!id || MOCK_APPLICATION_IDS.has(id)) return true;
+
+  const bName = (app.business?.businessName || "").trim().toLowerCase();
+  if (!bName || MOCK_BUSINESS_NAMES.has(bName)) return true;
+
+  const oName = (app.owner?.ownerName || "").trim();
+  if (!oName) return true;
+
+  return false;
+}
+
+/**
+ * Returns empty array so the applications store starts empty and only genuine
+ * registrations appear.
+ */
 export function getInitialSeedApplications(): VendorApplication[] {
-  return [
-    {
-      id: "BVR-2026-001248",
-      applicationNumber: "BVR-2026-001248",
-      vendorId: "BUT-V-001248",
-      status: "under_review",
-      verificationStatus: "Pending",
-      isVerified: false,
-      currentStage: 2,
-      business: {
-        businessName: "Montilla Street Produce & Snacks",
-        businessDescription: "Produce, local snacks, and fresh goods in Butuan City.",
-        category: "Produce & Snacks / Market Stall",
-      },
-      owner: {
-        ownerName: "Maria Santos",
-      },
-      contact: {
-        contactNumber: "09181234567",
-        emailAddress: "maria.santos@email.com",
-      },
-      address: {
-        houseNo: "123",
-        street: "Montilla Boulevard",
-        barangay: "Barangay Urduja",
-        city: "Butuan City",
-        province: "Agusan del Norte",
-        region: "Caraga",
-        country: "Philippines",
-      },
-      documents: [
-        {
-          id: "doc-1248",
-          filename: "government-id.pdf",
-          idType: "Philippine National ID (PhilSys)",
-          uploadedAt: "October 6, 2026",
-          status: "Submitted",
-        },
-      ],
-      adminRemarks: "Please provide a clearer business address and replace the submitted government ID image with a readable copy.",
-      statusHistory: [
-        {
-          id: "act-1248-1",
-          previousStatus: null,
-          newStatus: "under_review",
-          timestamp: "2026-10-06T09:30:00Z",
-          action: "Application Under Review",
-          actionBy: "Admin",
-        },
-      ],
-      submittedAt: "2026-10-06T09:30:00Z",
-      updatedAt: "2026-10-06T09:30:00Z",
-    },
-    {
-      id: "BVR-2026-001247",
-      applicationNumber: "BVR-2026-001247",
-      vendorId: "BUT-V-001247",
-      status: "under_review",
-      verificationStatus: "Pending",
-      isVerified: false,
-      currentStage: 2,
-      business: {
-        businessName: "Urduja Dry Goods & General Merchandise",
-        businessDescription: "Textiles, kitchenware, and general household items.",
-        category: "Dry Goods / Market Stall",
-      },
-      owner: {
-        ownerName: "Carlos Mendoza",
-      },
-      contact: {
-        contactNumber: "09171234567",
-        emailAddress: "carlos.mendoza@email.com",
-      },
-      address: {
-        houseNo: "45",
-        street: "Burgos Street",
-        barangay: "Urduja",
-        city: "Butuan City",
-        province: "Agusan del Norte",
-        region: "Caraga",
-        country: "Philippines",
-      },
-      documents: [
-        {
-          id: "doc-1247",
-          filename: "philsys-id.pdf",
-          idType: "PhilSys National ID",
-          uploadedAt: "October 6, 2026",
-          status: "Submitted",
-        },
-      ],
-      adminRemarks: "",
-      statusHistory: [
-        {
-          id: "act-1247-1",
-          previousStatus: null,
-          newStatus: "under_review",
-          timestamp: "2026-10-06T08:00:00Z",
-          action: "Application Under Review",
-          actionBy: "Admin",
-        },
-      ],
-      submittedAt: "2026-10-06T08:00:00Z",
-      updatedAt: "2026-10-06T08:00:00Z",
-    },
-    {
-      id: "BVR-2026-001246",
-      applicationNumber: "BVR-2026-001246",
-      vendorId: "BUT-V-001246",
-      status: "needs_correction",
-      verificationStatus: "Pending",
-      isVerified: false,
-      currentStage: 2,
-      business: {
-        businessName: "Barangay Dagohoy Carinderia & Catering",
-        businessDescription: "Cooked meals, lutong bahay, and snack catering.",
-        category: "Food & Beverage",
-      },
-      owner: {
-        ownerName: "Lucia Dagohoy",
-      },
-      contact: {
-        contactNumber: "09187654321",
-        emailAddress: "lucia.dagohoy@email.com",
-      },
-      address: {
-        houseNo: "88",
-        street: "Dagohoy Street",
-        barangay: "Dagohoy",
-        city: "Butuan City",
-        province: "Agusan del Norte",
-        region: "Caraga",
-        country: "Philippines",
-      },
-      documents: [
-        {
-          id: "doc-1246",
-          filename: "valid-id-scan.png",
-          idType: "Driver's License",
-          uploadedAt: "October 5, 2026",
-          status: "Replacement Requested",
-        },
-      ],
-      adminRemarks: "Please provide a clearer copy of the submitted document.",
-      statusHistory: [
-        {
-          id: "act-1246-1",
-          previousStatus: null,
-          newStatus: "needs_correction",
-          timestamp: "2026-10-05T10:00:00Z",
-          action: "Correction Requested",
-          actionBy: "Admin",
-        },
-      ],
-      submittedAt: "2026-10-05T10:00:00Z",
-      updatedAt: "2026-10-05T10:00:00Z",
-    },
-    {
-      id: "BVR-2026-001245",
-      applicationNumber: "BVR-2026-001245",
-      vendorId: "BUT-V-001245",
-      status: "submitted",
-      verificationStatus: "Pending",
-      isVerified: false,
-      currentStage: 1,
-      business: {
-        businessName: "Agusan River Fresh Fish",
-        businessDescription: "Fresh catch tilapia, bangus, and river shrimp sold at morning market.",
-        category: "Wet Market / Seafood",
-      },
-      owner: {
-        ownerName: "Elena Roxas",
-      },
-      contact: {
-        contactNumber: "09179876543",
-        emailAddress: "elena.roxas@email.com",
-      },
-      address: {
-        houseNo: "12",
-        street: "Riverside Drive",
-        barangay: "San Vicente",
-        city: "Butuan City",
-        province: "Agusan del Norte",
-        region: "Caraga",
-        country: "Philippines",
-      },
-      documents: [],
-      adminRemarks: "Initial queue intake.",
-      statusHistory: [
-        {
-          id: "act-1245-1",
-          previousStatus: null,
-          newStatus: "submitted",
-          timestamp: "2026-10-05T09:00:00Z",
-          action: "Application Submitted",
-          actionBy: "Vendor",
-        },
-      ],
-      submittedAt: "2026-10-05T09:00:00Z",
-      updatedAt: "2026-10-05T09:00:00Z",
-    },
-    {
-      id: "BVR-2026-001244",
-      applicationNumber: "BVR-2026-001244",
-      vendorId: "BUT-V-001244",
-      status: "approved",
-      verificationStatus: "Verified",
-      isVerified: true,
-      currentStage: 4,
-      business: {
-        businessName: "Golden Tara Refreshments",
-        businessDescription: "Specialty halo-halo, sago't gulaman, and cold native snacks.",
-        category: "Refreshments & Snacks",
-      },
-      owner: {
-        ownerName: "Roberto Ramos",
-      },
-      contact: {
-        contactNumber: "09192233445",
-        emailAddress: "roberto.ramos@email.com",
-      },
-      address: {
-        houseNo: "302",
-        street: "Pizarro Street",
-        barangay: "Villa Kananga",
-        city: "Butuan City",
-        province: "Agusan del Norte",
-        region: "Caraga",
-        country: "Philippines",
-      },
-      documents: [
-        {
-          id: "doc-1244",
-          filename: "dti-certificate.pdf",
-          idType: "Postal ID (Digital)",
-          uploadedAt: "October 4, 2026",
-          status: "Verified",
-        },
-      ],
-      adminRemarks: "Compliant with City Health sanitary guidelines.",
-      statusHistory: [
-        {
-          id: "act-1244-1",
-          previousStatus: null,
-          newStatus: "approved",
-          timestamp: "2026-10-04T14:00:00Z",
-          action: "Application Approved",
-          actionBy: "Admin",
-        },
-      ],
-      submittedAt: "2026-10-04T08:00:00Z",
-      updatedAt: "2026-10-04T14:00:00Z",
-    },
-    {
-      id: "BVR-2026-001243",
-      applicationNumber: "BVR-2026-001243",
-      vendorId: "BUT-V-001243",
-      status: "rejected",
-      verificationStatus: "Not Verified",
-      isVerified: false,
-      currentStage: 2,
-      business: {
-        businessName: "Butuan Balut & Penoy Express",
-        businessDescription: "Mobile evening egg cart serving hot balut and penoy.",
-        category: "Street Vendor / Eggs",
-      },
-      owner: {
-        ownerName: "Dante Magbanua",
-      },
-      contact: {
-        contactNumber: "09214455667",
-        emailAddress: "dante.balut@email.com",
-      },
-      address: {
-        houseNo: "77",
-        street: "Langihan Road",
-        barangay: "Baan KM 3",
-        city: "Butuan City",
-        province: "Agusan del Norte",
-        region: "Caraga",
-        country: "Philippines",
-      },
-      documents: [
-        {
-          id: "doc-1243",
-          filename: "national-id-scan.jpg",
-          idType: "PhilSys National ID",
-          uploadedAt: "October 3, 2026",
-          status: "Submitted",
-        },
-      ],
-      adminRemarks: "Duplicate registration detected for same stall location.",
-      statusHistory: [
-        {
-          id: "act-1243-1",
-          previousStatus: null,
-          newStatus: "rejected",
-          timestamp: "2026-10-03T16:00:00Z",
-          action: "Application Rejected",
-          actionBy: "Admin",
-        },
-      ],
-      submittedAt: "2026-10-03T09:00:00Z",
-      updatedAt: "2026-10-03T16:00:00Z",
-    },
-    {
-      id: "BVR-2026-001242",
-      applicationNumber: "BVR-2026-001242",
-      vendorId: "BUT-V-001242",
-      status: "under_review",
-      verificationStatus: "Pending",
-      isVerified: false,
-      currentStage: 2,
-      business: {
-        businessName: "Kadayawan Fruit Stand",
-        businessDescription: "Seasonal tropical fruits: durian, lanzones, and marang direct from growers.",
-        category: "Fruits & Produce",
-      },
-      owner: {
-        ownerName: "Liza Flores",
-      },
-      contact: {
-        contactNumber: "09307788990",
-        emailAddress: "liza.flores@email.com",
-      },
-      address: {
-        houseNo: "51",
-        street: "Capitol Drive",
-        barangay: "Villa Kananga",
-        city: "Butuan City",
-        province: "Agusan del Norte",
-        region: "Caraga",
-        country: "Philippines",
-      },
-      documents: [
-        {
-          id: "doc-1242",
-          filename: "philhealth-id.pdf",
-          idType: "PhilHealth ID",
-          uploadedAt: "October 3, 2026",
-          status: "Submitted",
-        },
-      ],
-      adminRemarks: "Pending cross-check with City Agriculture vendor permits.",
-      statusHistory: [
-        {
-          id: "act-1242-1",
-          previousStatus: null,
-          newStatus: "under_review",
-          timestamp: "2026-10-03T11:00:00Z",
-          action: "Application Under Review",
-          actionBy: "Admin",
-        },
-      ],
-      submittedAt: "2026-10-03T11:00:00Z",
-      updatedAt: "2026-10-03T11:00:00Z",
-    },
-    {
-      id: "BVR-2026-001241",
-      applicationNumber: "BVR-2026-001241",
-      vendorId: "BUT-V-001241",
-      status: "under_review",
-      verificationStatus: "Pending",
-      isVerified: false,
-      currentStage: 2,
-      business: {
-        businessName: "Maningning Tailoring & Repair",
-        businessDescription: "Clothing alterations, zipper repairs, and custom school uniform sewing.",
-        category: "Tailoring & Repair Services",
-      },
-      owner: {
-        ownerName: "Estrella Maningning",
-      },
-      contact: {
-        contactNumber: "09153322114",
-        emailAddress: "estrella.sew@email.com",
-      },
-      address: {
-        houseNo: "14",
-        street: "E. Luna Street",
-        barangay: "San Vicente",
-        city: "Butuan City",
-        province: "Agusan del Norte",
-        region: "Caraga",
-        country: "Philippines",
-      },
-      documents: [
-        {
-          id: "doc-1241",
-          filename: "voters-cert.pdf",
-          idType: "COMELEC Voter's Certificate",
-          uploadedAt: "October 2, 2026",
-          status: "Submitted",
-        },
-      ],
-      adminRemarks: "Stall location verified along commercial alleyway.",
-      statusHistory: [
-        {
-          id: "act-1241-1",
-          previousStatus: null,
-          newStatus: "under_review",
-          timestamp: "2026-10-02T15:00:00Z",
-          action: "Application Under Review",
-          actionBy: "Admin",
-        },
-      ],
-      submittedAt: "2026-10-02T09:00:00Z",
-      updatedAt: "2026-10-02T15:00:00Z",
-    },
-  ];
+  return [];
 }
 
 // ─── SSR / Browser Safety Check ───────────────────────────────────────────────
@@ -478,19 +115,27 @@ function getStoreSnapshot(): VendorApplication[] {
     lastRaw = raw;
 
     if (!raw) {
-      // Seed with initial applications if none exist yet
-      const seed = getInitialSeedApplications();
-      saveApplicationsToStorage(seed);
-      cachedSnapshot = seed;
-    } else {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        cachedSnapshot = parsed as VendorApplication[];
-      } else {
-        const seed = getInitialSeedApplications();
-        saveApplicationsToStorage(seed);
-        cachedSnapshot = seed;
+      cachedSnapshot = EMPTY_STORE_APPLICATIONS;
+      return cachedSnapshot;
+    }
+
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      const genuine = parsed.filter((app) => !isDemoOrMockApplication(app));
+      if (genuine.length !== parsed.length) {
+        // Silently update storage without re-triggering store events during snapshot calculation
+        try {
+          const serialized = JSON.stringify(genuine);
+          localStorage.setItem(APPLICATIONS_STORAGE_KEY, serialized);
+          localStorage.setItem(LEGACY_APPLICATIONS_STORAGE_KEY, serialized);
+          lastRaw = serialized;
+        } catch {
+          // ignore storage errors
+        }
       }
+      cachedSnapshot = genuine;
+    } else {
+      cachedSnapshot = EMPTY_STORE_APPLICATIONS;
     }
     return cachedSnapshot;
   } catch {
@@ -538,7 +183,7 @@ function saveApplicationsToStorage(applications: VendorApplication[]): void {
 
 /**
  * Retrieve all saved VendorApplication records from the shared store.
- * Returns initial seeds if nothing is stored yet.
+ * Returns empty array if nothing is stored yet.
  */
 export function getApplications(): VendorApplication[] {
   if (!isBrowser()) {
@@ -551,22 +196,23 @@ export function getApplications(): VendorApplication[] {
       localStorage.getItem(LEGACY_APPLICATIONS_STORAGE_KEY);
 
     if (!raw) {
-      const seed = getInitialSeedApplications();
-      saveApplicationsToStorage(seed);
-      return seed;
+      return [];
     }
 
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed) || parsed.length === 0) {
-      const seed = getInitialSeedApplications();
-      saveApplicationsToStorage(seed);
-      return seed;
+    if (!Array.isArray(parsed)) {
+      return [];
     }
 
-    return parsed as VendorApplication[];
+    const genuine = parsed.filter((app) => !isDemoOrMockApplication(app));
+    if (genuine.length !== parsed.length) {
+      saveApplicationsToStorage(genuine);
+    }
+
+    return genuine;
   } catch (error) {
     console.error("Failed to parse vendor applications from localStorage:", error);
-    return getInitialSeedApplications();
+    return [];
   }
 }
 
@@ -619,6 +265,14 @@ export function createApplication(application: VendorApplication): VendorApplica
     currentStage: application.currentStage ?? 1,
     submittedAt: application.submittedAt || now,
     updatedAt: application.updatedAt || now,
+    payment: application.payment || {
+      status: "unpaid",
+      assessedAmount: 0,
+      amountPaid: 0,
+      currency: "PHP",
+      feeBreakdown: [],
+      assessmentStatus: "assessment_required",
+    },
     statusHistory: application.statusHistory ?? [
       {
         id: `act-${Date.now()}`,
@@ -784,7 +438,7 @@ export function clearApplications(): void {
 export function generateNextApplicationNumber(): string {
   const year = new Date().getFullYear();
   const allApps = getApplications();
-  let maxSeq = 1248; // Base seed number from mock data
+  let maxSeq = 0;
   for (const app of allApps) {
     const num = app.applicationNumber || app.id;
     const match = num.match(/BVR-\d{4}-(\d+)/i);
@@ -801,7 +455,8 @@ export function generateNextApplicationNumber(): string {
 
 // ─── Explicit Deleted Applications Store ──────────────────────────────────────
 
-let cachedDeletedSnapshot: string[] = [];
+const EMPTY_DELETED_SNAPSHOT: string[] = [];
+let cachedDeletedSnapshot: string[] = EMPTY_DELETED_SNAPSHOT;
 let lastDeletedRaw: string | null = "__UNSET__";
 
 export function subscribeToDeletedStore(callback: () => void): () => void {
@@ -822,7 +477,7 @@ export function subscribeToDeletedStore(callback: () => void): () => void {
 
 export function getDeletedStoreSnapshot(): string[] {
   if (!isBrowser()) {
-    return [];
+    return EMPTY_DELETED_SNAPSHOT;
   }
   try {
     const raw = localStorage.getItem(DELETED_APPLICATIONS_STORAGE_KEY);
@@ -831,12 +486,20 @@ export function getDeletedStoreSnapshot(): string[] {
     }
     lastDeletedRaw = raw;
     if (!raw) {
-      cachedDeletedSnapshot = [];
+      cachedDeletedSnapshot = EMPTY_DELETED_SNAPSHOT;
+      return cachedDeletedSnapshot;
+    }
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      if (
+        cachedDeletedSnapshot.length === parsed.length &&
+        cachedDeletedSnapshot.every((val, idx) => val === parsed[idx])
+      ) {
+        return cachedDeletedSnapshot;
+      }
+      cachedDeletedSnapshot = parsed as string[];
     } else {
-      const parsed = JSON.parse(raw);
-      cachedDeletedSnapshot = Array.isArray(parsed)
-        ? (parsed as string[])
-        : [];
+      cachedDeletedSnapshot = EMPTY_DELETED_SNAPSHOT;
     }
     return cachedDeletedSnapshot;
   } catch {
@@ -845,7 +508,7 @@ export function getDeletedStoreSnapshot(): string[] {
 }
 
 export function getDeletedStoreServerSnapshot(): string[] {
-  return [];
+  return EMPTY_DELETED_SNAPSHOT;
 }
 
 /**
@@ -929,11 +592,11 @@ export function resetDeletedAdminApplications(): void {
   try {
     localStorage.removeItem(DELETED_APPLICATIONS_STORAGE_KEY);
     lastDeletedRaw = null;
-    cachedDeletedSnapshot = [];
+    cachedDeletedSnapshot = EMPTY_DELETED_SNAPSHOT;
     if (typeof window.dispatchEvent === "function") {
       window.dispatchEvent(
         new CustomEvent(DELETED_APPLICATIONS_UPDATED_EVENT, {
-          detail: [],
+          detail: EMPTY_DELETED_SNAPSHOT,
         })
       );
     }
