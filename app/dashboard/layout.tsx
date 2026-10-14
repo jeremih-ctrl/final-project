@@ -15,33 +15,46 @@ import {
   LogOut,
   Menu,
   ExternalLink,
+  ShieldAlert,
+  AlertTriangle,
 } from "lucide-react";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Separator } from "@/components/ui/separator";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
 import { Sheet, SheetTrigger, SheetContent } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
-import { useVendorAuth } from "@/lib/demo-auth";
+import { buttonVariants } from "@/components/ui/button";
+import { setVendorSession, clearVendorSession } from "@/lib/demo-auth";
 import { useVendorNotifications } from "@/lib/notifications-data";
+import { useAppRole } from "@/lib/clerk-roles";
+import { saveSharedApplication } from "@/lib/vendor-application-state";
+import { UserButton, SignOutButton, useClerk } from "@clerk/nextjs";
+
+interface NavItem {
+  label: string;
+  href: string;
+  icon: typeof LayoutDashboard;
+  active: boolean;
+  isExternal?: boolean;
+  badge?: string;
+  hasDot?: boolean;
+}
 
 interface SidebarNavProps {
   pathname: string;
   onNavigate?: () => void;
-  onLogout?: () => void;
+  onLogout?: () => Promise<void> | void;
+  isLoggingOut?: boolean;
+  logoutError?: string | null;
 }
 
-function SidebarNav({ pathname, onNavigate, onLogout }: SidebarNavProps) {
+function SidebarNav({
+  pathname,
+  onNavigate,
+  onLogout,
+  isLoggingOut = false,
+  logoutError = null,
+}: SidebarNavProps) {
   const { unreadCount } = useVendorNotifications("BVR-2026-001248");
 
-  const navItems = [
+  const navItems: NavItem[] = [
     {
       label: "Dashboard",
       href: "/dashboard",
@@ -50,10 +63,9 @@ function SidebarNav({ pathname, onNavigate, onLogout }: SidebarNavProps) {
     },
     {
       label: "My Application",
-      href: "/application-status",
+      href: "/dashboard/my-application",
       icon: FileText,
-      active: pathname === "/application-status",
-      isExternal: true,
+      active: pathname.startsWith("/dashboard/my-application"),
     },
     {
       label: "Business Profile",
@@ -157,16 +169,35 @@ function SidebarNav({ pathname, onNavigate, onLogout }: SidebarNavProps) {
           <span>Help / Support</span>
         </Link>
 
+        {logoutError && (
+          <div
+            role="alert"
+            className="px-3 py-2 rounded-xl text-[11px] bg-rose-950/80 border border-rose-800/80 text-rose-300 leading-tight"
+          >
+            {logoutError}
+          </div>
+        )}
+
         <button
           type="button"
-          onClick={() => {
+          onClick={async () => {
+            if (isLoggingOut) return;
             if (onNavigate) onNavigate();
-            if (onLogout) onLogout();
+            if (onLogout) {
+              await onLogout();
+            }
           }}
-          className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium text-rose-400 hover:bg-rose-950/40 hover:text-rose-300 transition-colors cursor-pointer text-left"
+          disabled={isLoggingOut}
+          aria-busy={isLoggingOut}
+          aria-label={isLoggingOut ? "Logging out..." : "Logout"}
+          className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium text-rose-400 hover:bg-rose-950/40 hover:text-rose-300 transition-colors cursor-pointer text-left disabled:opacity-60 disabled:cursor-not-allowed"
         >
-          <LogOut className="w-4 h-4 shrink-0" />
-          <span>Logout</span>
+          {isLoggingOut ? (
+            <div className="w-4 h-4 border-2 border-rose-400 border-t-transparent rounded-full animate-spin shrink-0" />
+          ) : (
+            <LogOut className="w-4 h-4 shrink-0" />
+          )}
+          <span>{isLoggingOut ? "Logging out..." : "Logout"}</span>
         </button>
       </div>
     </div>
@@ -181,17 +212,102 @@ export default function DashboardLayout({
   const pathname = usePathname();
   const router = useRouter();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const { session, isLoading, logout } = useVendorAuth();
+  const { signOut } = useClerk();
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [logoutError, setLogoutError] = useState<string | null>(null);
 
-  // Redirect to vendor login if unauthenticated
+  const handleVendorLogout = async () => {
+    if (isLoggingOut) return;
+    setIsLoggingOut(true);
+    setLogoutError(null);
+
+    try {
+      // Clear client session tokens
+      clearVendorSession();
+
+      // Sign out using Clerk's supported signOut method and redirect to public home
+      await signOut({ redirectUrl: "/" });
+      router.replace("/");
+    } catch (err) {
+      console.error("Vendor sign out failed:", err);
+      setIsLoggingOut(false);
+      setLogoutError(
+        err instanceof Error && err.message
+          ? err.message
+          : "Failed to log out. Please try again."
+      );
+    }
+  };
+
+  const {
+    user: clerkUser,
+    isLoaded: isClerkLoaded,
+    isSignedIn: isClerkSignedIn,
+    isAdmin: isClerkAdmin,
+    email: clerkEmail,
+  } = useAppRole();
+
+  const [isFetchingApp, setIsFetchingApp] = useState(true);
+  const [hasApplication, setHasApplication] = useState<boolean | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  // If user is signed in with Clerk as Admin, redirect them to the Admin Portal
   useEffect(() => {
-    if (!isLoading && !session) {
+    if (isClerkLoaded && isClerkSignedIn && isClerkAdmin) {
+      router.replace("/admin");
+    }
+  }, [isClerkLoaded, isClerkSignedIn, isClerkAdmin, router]);
+
+  const loadPersistentApplication = async () => {
+    setIsFetchingApp(true);
+    setLoadError(null);
+    try {
+      const res = await fetch("/api/vendor/application", { cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        if (data?.application) {
+          saveSharedApplication(data.application);
+          setHasApplication(true);
+          setLoadError(null);
+          setVendorSession({
+            email: clerkEmail || data.application.contact?.emailAddress || "vendor@butuan.gov.ph",
+            name: data.application.owner?.ownerName || clerkUser?.fullName || "Registered Vendor",
+            role: "Local Vendor",
+          });
+          return;
+        } else {
+          setHasApplication(false);
+          setLoadError(null);
+          return;
+        }
+      } else {
+        setLoadError("Unable to retrieve your application records from the server.");
+      }
+    } catch (err) {
+      console.error("Failed to load vendor application in dashboard:", err);
+      setLoadError("Network error occurred while retrieving your application records.");
+    } finally {
+      setIsFetchingApp(false);
+    }
+  };
+
+  // Restore vendor's persistent application upon Clerk/Google authentication
+  useEffect(() => {
+    if (!isClerkLoaded || !isClerkSignedIn || isClerkAdmin) return;
+    loadPersistentApplication();
+  }, [isClerkLoaded, isClerkSignedIn, isClerkAdmin, clerkEmail, clerkUser]);
+
+  // Redirect to unified login if completely unauthenticated with Clerk
+  useEffect(() => {
+    if (isClerkLoaded && !isClerkSignedIn && !isLoggingOut) {
+      clearVendorSession();
       router.replace("/login");
     }
-  }, [isLoading, session, router]);
+  }, [isClerkLoaded, isClerkSignedIn, isLoggingOut, router]);
 
   // Dynamic header page title based on current route
   const getHeaderTitle = (path: string) => {
+    if (path.startsWith("/dashboard/my-application")) return "My Application";
     if (path.startsWith("/dashboard/business-profile")) return "Business Profile";
     if (path.startsWith("/dashboard/documents")) return "Documents";
     if (path.startsWith("/dashboard/notifications")) return "Notifications";
@@ -202,25 +318,184 @@ export default function DashboardLayout({
 
   const headerTitle = getHeaderTitle(pathname);
 
-  // Protected route guard: Do not display dashboard or user information until authenticated
-  if (isLoading || !session) {
+  // Protected route guard: Do not display dashboard until authenticated with Clerk
+  if (!isClerkLoaded || (isClerkSignedIn && isFetchingApp)) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
         <div className="flex flex-col items-center gap-3">
           <div className="w-8 h-8 border-3 border-blue-600 border-t-transparent rounded-full animate-spin" />
           <p className="text-xs font-medium text-slate-500">
-            Checking authentication...
+            {isFetchingApp
+              ? "Retrieving your persistent vendor application..."
+              : "Checking authentication..."}
           </p>
         </div>
       </div>
     );
   }
 
+  // Fallback loading while redirect takes effect if unauthenticated with Clerk
+  if (!isClerkSignedIn) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-3 border-blue-600 border-t-transparent rounded-full animate-spin" />
+          <p className="text-xs font-medium text-slate-500">
+            {isLoggingOut ? "Logging out..." : "Redirecting to login..."}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Clear error and retry option when application data cannot be loaded
+  if (isClerkSignedIn && loadError) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 text-center space-y-4 shadow-xl">
+          <div className="w-14 h-14 rounded-2xl bg-rose-50 border border-rose-200 text-rose-600 mx-auto flex items-center justify-center">
+            <AlertTriangle className="w-7 h-7" />
+          </div>
+          <div className="space-y-1.5">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-rose-700 bg-rose-50 px-2.5 py-0.5 rounded-full border border-rose-200">
+              Connection Issue
+            </span>
+            <h2 className="text-xl font-bold text-slate-900">
+              Unable to Load Application
+            </h2>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              {loadError} Please try reloading your application records.
+            </p>
+          </div>
+
+          <div className="pt-2 space-y-2">
+            <button
+              type="button"
+              onClick={loadPersistentApplication}
+              className={cn(
+                buttonVariants({ variant: "default" }),
+                "w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs h-10 rounded-xl cursor-pointer"
+              )}
+            >
+              Retry Loading Application
+            </button>
+
+            <SignOutButton redirectUrl="/login">
+              <button
+                type="button"
+                className="w-full text-xs font-medium text-slate-600 hover:text-slate-900 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors cursor-pointer"
+              >
+                Sign Out &amp; Use Another Account
+              </button>
+            </SignOutButton>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // If vendor has no linked application yet, direct them to register rather than showing fabricated mock data
+  if (isClerkSignedIn && hasApplication === false) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 text-center space-y-4 shadow-xl">
+          <div className="w-14 h-14 rounded-2xl bg-blue-50 border border-blue-200 text-blue-600 mx-auto flex items-center justify-center">
+            <Store className="w-7 h-7" />
+          </div>
+          <div className="space-y-1.5">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200">
+              No Application Found
+            </span>
+            <h2 className="text-xl font-bold text-slate-900">
+              Vendor Registration Required
+            </h2>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              You are signed in as <strong className="text-slate-800">{clerkEmail}</strong>, but there is no business application connected to this account yet. Please register your vendor details to activate your dashboard.
+            </p>
+          </div>
+
+          <div className="pt-2 space-y-2">
+            <Link
+              href="/register"
+              className={cn(
+                buttonVariants({ variant: "default" }),
+                "w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs h-10 rounded-xl cursor-pointer"
+              )}
+            >
+              Start Vendor Registration
+            </Link>
+
+            <SignOutButton redirectUrl="/login">
+              <button
+                type="button"
+                className="w-full text-xs font-medium text-slate-600 hover:text-slate-900 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors cursor-pointer"
+              >
+                Sign Out &amp; Use Another Account
+              </button>
+            </SignOutButton>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ROLE RESTRICTION GUARD:
+  // If user is signed in with Clerk as Admin, route them away from vendor dashboard
+  if (isClerkSignedIn && isClerkAdmin) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 text-center space-y-4 shadow-xl">
+          <div className="w-14 h-14 rounded-2xl bg-amber-50 border border-amber-200 text-amber-600 mx-auto flex items-center justify-center">
+            <ShieldAlert className="w-7 h-7" />
+          </div>
+          <div className="space-y-1.5">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
+              Role: Administrator
+            </span>
+            <h2 className="text-xl font-bold text-slate-900">
+              Administrator Account Detected
+            </h2>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              You are currently signed in as {clerkEmail} with Administrator clearance. Please use the LGU Admin Portal.
+            </p>
+          </div>
+
+          <div className="pt-2 space-y-2">
+            <Link
+              href="/admin"
+              className={cn(
+                buttonVariants({ variant: "default" }),
+                "w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs h-10 rounded-xl cursor-pointer"
+              )}
+            >
+              Go to Admin Portal
+            </Link>
+
+            <SignOutButton redirectUrl="/login">
+              <button
+                type="button"
+                className="w-full text-xs font-medium text-slate-600 hover:text-slate-900 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors cursor-pointer"
+              >
+                Sign Out &amp; Switch Account
+              </button>
+            </SignOutButton>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+
   return (
     <div className="min-h-screen bg-slate-50/70 text-slate-900 flex">
       {/* Desktop Sidebar (visible on lg screens) */}
       <aside className="hidden lg:flex w-64 flex-col fixed inset-y-0 z-30 shadow-xs border-r border-slate-800">
-        <SidebarNav pathname={pathname} onLogout={logout} />
+        <SidebarNav
+          pathname={pathname}
+          onLogout={handleVendorLogout}
+          isLoggingOut={isLoggingOut}
+          logoutError={logoutError}
+        />
       </aside>
 
       {/* Main Content Area (offset by sidebar width on desktop) */}
@@ -245,7 +520,9 @@ export default function DashboardLayout({
                 <SidebarNav
                   pathname={pathname}
                   onNavigate={() => setMobileMenuOpen(false)}
-                  onLogout={logout}
+                  onLogout={handleVendorLogout}
+                  isLoggingOut={isLoggingOut}
+                  logoutError={logoutError}
                 />
               </SheetContent>
             </Sheet>
@@ -260,101 +537,15 @@ export default function DashboardLayout({
             </div>
           </div>
 
-          {/* Right Header: Notification + User Dropdown */}
-          <div className="flex items-center gap-3 sm:gap-4">
-            {/* Notification Bell */}
-            <Link
-              href="/dashboard/notifications"
-              className="relative p-2 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
-              aria-label="View notifications"
-            >
-              <Bell className="w-5 h-5" />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-blue-600 ring-2 ring-white" />
-            </Link>
-
-            <Separator orientation="vertical" className="h-6 hidden sm:block" />
-
-            {/* User Dropdown Menu */}
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <button
-                    type="button"
-                    className="flex items-center gap-2.5 p-1.5 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer outline-hidden"
-                  >
-                    <Avatar
-                      size="sm"
-                      className="bg-blue-100 text-blue-700 font-bold border border-blue-200"
-                    >
-                      <AvatarFallback>
-                        {session.name
-                          ? session.name
-                              .split(" ")
-                              .map((n) => n[0])
-                              .join("")
-                              .slice(0, 2)
-                              .toUpperCase()
-                          : "JD"}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="text-left hidden md:block">
-                      <span className="text-xs font-bold text-slate-900 block leading-tight">
-                        {session.name}
-                      </span>
-                      <span className="text-[11px] text-slate-500 font-medium block leading-tight">
-                        {session.role}
-                      </span>
-                    </div>
-                  </button>
-                }
-              />
-              <DropdownMenuContent
-                align="end"
-                className="w-56 p-1.5 shadow-lg border-slate-200"
-              >
-                <DropdownMenuGroup>
-                  <DropdownMenuLabel className="font-semibold text-xs px-2 py-1.5 text-slate-700">
-                    <div className="font-bold text-sm text-slate-900">
-                      {session.name}
-                    </div>
-                    <div className="text-xs font-normal text-slate-500">
-                      {session.email}
-                    </div>
-                  </DropdownMenuLabel>
-                </DropdownMenuGroup>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={() => router.push("/dashboard/business-profile")}
-                  className="text-xs py-2 cursor-pointer"
-                >
-                  <Building2 className="w-4 h-4 mr-2 text-slate-500" />
-                  Profile
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => router.push("/dashboard/settings")}
-                  className="text-xs py-2 cursor-pointer"
-                >
-                  <Settings className="w-4 h-4 mr-2 text-slate-500" />
-                  Settings
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => router.push("/dashboard/help")}
-                  className="text-xs py-2 cursor-pointer"
-                >
-                  <HelpCircle className="w-4 h-4 mr-2 text-slate-500" />
-                  Help / Support
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  variant="destructive"
-                  onClick={logout}
-                  className="text-xs py-2 text-rose-600 font-medium cursor-pointer"
-                >
-                  <LogOut className="w-4 h-4 mr-2 text-rose-500" />
-                  Logout
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+          {/* Right Header: Google Account User Profile */}
+          <div className="flex items-center">
+            <UserButton
+              appearance={{
+                elements: {
+                  avatarBox: "w-8 h-8 ring-2 ring-blue-500/20",
+                },
+              }}
+            />
           </div>
         </header>
 

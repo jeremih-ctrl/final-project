@@ -25,11 +25,18 @@ import {
   AlertCircle,
   FileCheck2,
   Info,
+  Receipt,
+  Download,
+  Printer,
+  Landmark,
+  Clock,
+  ShieldCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { addAdminNotification } from "@/lib/notifications-data";
 import { useSharedApplication } from "@/lib/vendor-application-state";
 import { updateApplication } from "@/lib/application-store";
+import { formatPhpCurrency } from "@/lib/payment-fee-schedule";
 
 type DocStatus = "Submitted" | "Under Review" | "Accepted" | "Needs Replacement";
 
@@ -37,6 +44,63 @@ export default function DocumentsPage() {
   const { application } = useSharedApplication();
   const primaryDoc = application.documents?.[0];
   const applicantName = application.vendor?.name || application.ownerName || "Registered Vendor";
+
+  // Payment Receipt Resolution
+  const receiptFromDocs = application.documents?.find(
+    (d) => d.idType === "Vendor Registration Payment Receipt"
+  );
+  const paymentInfo = application.payment;
+  const isPaymentVerified =
+    paymentInfo?.status === "verified" ||
+    application.paymentStatus === "verified" ||
+    receiptFromDocs?.status === "Verified";
+
+  const paymentStatus = paymentInfo?.status || application.paymentStatus || "unpaid";
+
+  const orNumber =
+    paymentInfo?.receiptNumber ||
+    receiptFromDocs?.filename?.match(/CTO-OR-[0-9A-Z-]+/i)?.[0] ||
+    `CTO-OR-2026-${(application.applicationNumber || application.id || "001248").replace(/[^0-9]/g, "").slice(-4) || "0892"}`;
+
+  const receiptFilename =
+    receiptFromDocs?.filename || `Vendor-Registration-Payment-Receipt-${orNumber}.pdf`;
+
+  const receiptIssueDate =
+    paymentInfo?.verifiedAt
+      ? new Date(paymentInfo.verifiedAt).toLocaleDateString("en-US", {
+          month: "long",
+          day: "numeric",
+          year: "numeric",
+        })
+      : receiptFromDocs?.uploadedAt
+      ? new Date(receiptFromDocs.uploadedAt).toLocaleDateString("en-US", {
+          month: "long",
+          day: "numeric",
+          year: "numeric",
+        })
+      : "October 12, 2026";
+
+  const paymentMethod =
+    paymentInfo?.paymentMethod ||
+    application.paymentMethod ||
+    "GCash — Pay Online";
+
+  const amountPaid =
+    paymentInfo?.amountPaid ||
+    application.amountPaid ||
+    application.assessedAmount ||
+    2500;
+
+  const transactionRef =
+    paymentInfo?.transactionReference ||
+    application.transactionReference ||
+    application.applicationNumber ||
+    "BVR-2026-001248";
+
+  const verifiedBy =
+    paymentInfo?.verifiedBy || "City Treasurer's Office (CTO) / CBPLD";
+
+  const [receiptModalOpen, setReceiptModalOpen] = useState(false);
 
   // Document state
   const [hasDocument, setHasDocument] = useState(Boolean(primaryDoc?.filename));
@@ -206,6 +270,149 @@ export default function DocumentsPage() {
           </div>
         </div>
       </Alert>
+
+      {/* 4. Vendor Registration Payment Receipt Card */}
+      <Card className="bg-white border border-slate-200/90 rounded-2xl shadow-xs overflow-hidden">
+        <CardHeader className="p-5 pb-3 border-b border-slate-100 flex flex-row items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Receipt className="w-4 h-4 text-emerald-700" />
+            <CardTitle className="text-base font-bold text-slate-900">
+              Vendor Registration Payment Receipt
+            </CardTitle>
+          </div>
+          {isPaymentVerified ? (
+            <Badge className="bg-emerald-100 text-emerald-900 border-emerald-300 text-xs font-semibold">
+              <CheckCircle2 className="w-3 h-3 mr-1 text-emerald-700" />
+              Verified
+            </Badge>
+          ) : paymentStatus === "awaiting_cashier_payment" ? (
+            <Badge className="bg-sky-100 text-sky-900 border-sky-300 text-xs font-semibold">
+              <Landmark className="w-3 h-3 mr-1 text-sky-700" />
+              Awaiting Cashier Payment
+            </Badge>
+          ) : paymentStatus === "pending_verification" ? (
+            <Badge className="bg-amber-100 text-amber-900 border-amber-300 text-xs font-semibold">
+              <Clock className="w-3 h-3 mr-1 text-amber-700" />
+              Pending Verification
+            </Badge>
+          ) : paymentStatus === "rejected" ? (
+            <Badge className="bg-rose-100 text-rose-900 border-rose-300 text-xs font-semibold">
+              <AlertCircle className="w-3 h-3 mr-1 text-rose-700" />
+              Payment Rejected
+            </Badge>
+          ) : (
+            <Badge className="bg-slate-100 text-slate-800 border-slate-300 text-xs font-semibold">
+              Payment Required
+            </Badge>
+          )}
+        </CardHeader>
+
+        <CardContent className="p-5 sm:p-6 space-y-4">
+          {isPaymentVerified ? (
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl bg-emerald-50/50 border border-emerald-200/80">
+              <div className="flex items-center gap-3.5 min-w-0">
+                <div className="w-12 h-12 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0 font-bold text-xs uppercase border border-emerald-300">
+                  PDF
+                </div>
+                <div className="space-y-0.5 min-w-0">
+                  <span className="font-bold text-slate-900 text-sm block font-mono truncate">
+                    {receiptFilename}
+                  </span>
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
+                    <span>OR No: <strong className="font-mono text-emerald-800">{orNumber}</strong></span>
+                    <span>•</span>
+                    <span>Issued: {receiptIssueDate}</span>
+                    <span>•</span>
+                    <span>Amount: <strong className="text-slate-900">{formatPhpCurrency(amountPaid)}</strong></span>
+                    <span>•</span>
+                    <span>Channel: {paymentMethod}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0 pt-2 sm:pt-0">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setReceiptModalOpen(true)}
+                  className="text-xs font-semibold text-emerald-800 border-emerald-300 bg-white hover:bg-emerald-50 cursor-pointer gap-1.5"
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                  <span>View Receipt</span>
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setReceiptModalOpen(true)}
+                  className="text-xs font-semibold text-slate-700 border-slate-300 hover:bg-slate-100 cursor-pointer gap-1.5"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download</span>
+                </Button>
+              </div>
+            </div>
+          ) : paymentStatus === "awaiting_cashier_payment" ? (
+            <div className="p-4 rounded-xl bg-sky-50 border border-sky-200 text-sky-950 space-y-2">
+              <div className="flex items-center gap-2 font-bold text-sm text-sky-900">
+                <Landmark className="w-4 h-4 text-sky-700" />
+                <span>City Treasurer&apos;s Office (CTO) Cashier Settlement Required</span>
+              </div>
+              <p className="text-xs text-sky-900/90 leading-relaxed">
+                Your selected payment method is <strong>City Treasurer&apos;s Office (CTO) Cashier — Pay In Person</strong>. Please present assessment tracking reference <strong className="font-mono">{transactionRef}</strong> at the CTO Cashier window at Butuan City Hall.
+              </p>
+              <div className="p-3 rounded-lg bg-white/80 border border-sky-200/80 text-xs text-sky-900 flex flex-wrap items-center justify-between gap-2">
+                <span>Assessed Fee: <strong>{formatPhpCurrency(amountPaid)}</strong></span>
+                <span className="text-[11px] text-sky-700">Receipt will appear here automatically upon cashier recording</span>
+              </div>
+            </div>
+          ) : paymentStatus === "pending_verification" ? (
+            <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-950 space-y-2">
+              <div className="flex items-center gap-2 font-bold text-sm text-amber-900">
+                <Clock className="w-4 h-4 text-amber-700" />
+                <span>GCash Payment Submitted — Verification Pending</span>
+              </div>
+              <p className="text-xs text-amber-900/90 leading-relaxed">
+                GCash payment for tracking reference <strong className="font-mono">{transactionRef}</strong> ({formatPhpCurrency(amountPaid)}) is awaiting administrative verification. City Treasury staff is validating this transaction against official municipal accounts.
+              </p>
+              <p className="text-[11px] text-amber-800">
+                Your official <strong>Vendor Registration Payment Receipt</strong> will be published in this section once staff records the verification. You will also receive an in-app notification.
+              </p>
+            </div>
+          ) : paymentStatus === "rejected" ? (
+            <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-950 space-y-2">
+              <div className="flex items-center gap-2 font-bold text-sm text-rose-900">
+                <AlertCircle className="w-4 h-4 text-rose-700" />
+                <span>Payment Details Rejected</span>
+              </div>
+              <p className="text-xs text-rose-900 leading-relaxed">
+                Reason: &ldquo;{paymentInfo?.rejectionReason || "Payment reference could not be matched with treasury records."}&rdquo;
+              </p>
+              <p className="text-[11px] text-rose-800">
+                Please review your payment or visit the City Treasurer&apos;s Office to settle your registration fee.
+              </p>
+            </div>
+          ) : (
+            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 space-y-2">
+              <div className="flex items-center gap-2 font-bold text-sm text-slate-900">
+                <Receipt className="w-4 h-4 text-slate-600" />
+                <span>No Payment Recorded</span>
+              </div>
+              <p className="text-xs text-slate-600">
+                Your official payment receipt will be generated and published in this section once your registration fee has been settled and verified.
+              </p>
+            </div>
+          )}
+
+          <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/70 text-[11px] text-slate-600 flex items-start gap-2">
+            <Info className="w-3.5 h-3.5 text-blue-600 shrink-0 mt-0.5" />
+            <span>
+              <strong>Document Integrity &amp; Privacy:</strong> Official payment receipts are secured and bound exclusively to application <strong className="font-mono text-slate-800">{application.applicationNumber || application.id}</strong>. Only the authenticated vendor and authorized LGU staff have access.
+            </span>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Document Section: Active Document vs Empty State */}
       {hasDocument ? (
@@ -526,6 +733,124 @@ export default function DocumentsPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Official Receipt Preview Dialog */}
+      <Dialog open={receiptModalOpen} onOpenChange={setReceiptModalOpen}>
+        <DialogContent className="sm:max-w-xl bg-white rounded-2xl p-6 shadow-2xl border border-slate-200">
+          <DialogHeader className="border-b border-slate-100 pb-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold">
+                  <Receipt className="w-5 h-5" />
+                </div>
+                <div>
+                  <DialogTitle className="text-base font-bold text-slate-900">
+                    Official Payment Receipt
+                  </DialogTitle>
+                  <DialogDescription className="text-xs text-slate-500">
+                    City Government of Butuan • Office of the City Treasurer
+                  </DialogDescription>
+                </div>
+              </div>
+              <Badge className="bg-emerald-100 text-emerald-900 border-emerald-300 font-semibold text-xs">
+                Verified &amp; Recorded
+              </Badge>
+            </div>
+          </DialogHeader>
+
+          <div className="py-4 space-y-4">
+            {/* Certificate Header Banner */}
+            <div className="p-4 rounded-xl bg-slate-900 text-white space-y-3">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-400 uppercase font-semibold tracking-wider text-[10px]">
+                  Official Receipt (OR) Number
+                </span>
+                <span className="text-emerald-400 font-mono font-bold text-xs">
+                  ORIGINAL
+                </span>
+              </div>
+              <p className="text-xl sm:text-2xl font-mono font-extrabold tracking-wide text-white">
+                {orNumber}
+              </p>
+              <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800 text-xs">
+                <div>
+                  <span className="text-[10px] uppercase text-slate-400 block font-medium">Issue Date</span>
+                  <span className="font-semibold text-slate-200">{receiptIssueDate}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase text-slate-400 block font-medium">Verified By</span>
+                  <span className="font-semibold text-slate-200">{verifiedBy}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Payor & Application Info */}
+            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/90 text-xs space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Business Name:</span>
+                <strong className="text-slate-900 font-semibold">{application.business?.businessName || application.businessName}</strong>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Registered Owner:</span>
+                <span className="text-slate-800">{applicantName}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Application Number:</span>
+                <span className="font-mono font-semibold text-slate-900">{application.applicationNumber || application.id}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Payment Channel:</span>
+                <span className="font-semibold text-blue-700">{paymentMethod}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Transaction Reference:</span>
+                <span className="font-mono font-bold text-slate-900">{transactionRef}</span>
+              </div>
+            </div>
+
+            {/* Fee Breakdown */}
+            <div className="rounded-xl border border-slate-200 overflow-hidden text-xs">
+              <div className="bg-slate-100 p-2.5 px-3 font-semibold text-slate-700 flex justify-between">
+                <span>Assessment Particulars</span>
+                <span>Amount (PHP)</span>
+              </div>
+              <div className="p-2.5 px-3 flex justify-between bg-white border-b border-slate-100">
+                <span className="text-slate-800">Vendor Registration Regulatory &amp; Mayor&apos;s Permit Fee</span>
+                <span className="font-mono font-semibold text-slate-900">{formatPhpCurrency(amountPaid)}</span>
+              </div>
+              <div className="p-3 px-3 flex justify-between bg-slate-50 font-bold text-sm">
+                <span className="text-slate-900">Total Settled</span>
+                <span className="font-mono text-emerald-700">{formatPhpCurrency(amountPaid)}</span>
+              </div>
+            </div>
+
+            <div className="text-[10px] text-slate-400 text-center leading-relaxed">
+              Official electronic receipt issued by the City Treasurer&apos;s Office, City Government of Butuan, Agusan del Norte. Valid for municipal vendor registration compliance.
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0 pt-2 border-t border-slate-100 flex flex-row items-center justify-between">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                if (typeof window !== "undefined") {
+                  window.print();
+                }
+              }}
+              className="text-xs font-semibold gap-1.5"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              <span>Print</span>
+            </Button>
+
+            <DialogClose render={<Button variant="outline" size="sm" type="button" />}>
+              Close
+            </DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

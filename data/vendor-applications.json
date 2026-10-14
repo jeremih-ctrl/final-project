@@ -1,0 +1,359 @@
+[
+  {
+    "id": "BVR-2026-000003",
+    "owner": {
+      "lastName": "",
+      "firstName": "",
+      "ownerName": "Ma. Irish Relleta",
+      "middleName": ""
+    },
+    "status": "approved",
+    "userId": "user_3Kd0oEGh4eXYQXgVNWbZc4CKPkn",
+    "address": {
+      "city": "Butuan City",
+      "region": "Caraga",
+      "street": "NEW ROAD NIGHT MARKET",
+      "country": "Philippines",
+      "houseNo": "STALL 2-3",
+      "barangay": "Holy Redeemer Pob.",
+      "province": "Agusan del Norte"
+    },
+    "contact": {
+      "emailAddress": "miprelleta12@gmail.com",
+      "contactNumber": "09761547673"
+    },
+    "payment": {
+      "status": "verified",
+      "currency": "PHP",
+      "amountPaid": 1450,
+      "verifiedAt": "2026-10-13T07:10:27.543Z",
+      "verifiedBy": "Admin (CBPLD Review Officer)",
+      "paymentDate": "2026-10-13T00:00:00.000Z",
+      "feeBreakdown": [
+        {
+          "id": "mayors-permit",
+          "name": "Mayor's Permit / Local Business Registration",
+          "notes": "City Tax Ordinance No. 132 as amended",
+          "amount": 500,
+          "description": "City Business Permits and Licensing Department (CBPLD) municipal authorization",
+          "isRegulatory": true
+        },
+        {
+          "id": "barangay-clearance",
+          "name": "Barangay Clearance Regulatory Fee",
+          "notes": "RA 11032 Ease of Doing Business integration",
+          "amount": 100,
+          "description": "Consolidated barangay business clearance collected at City BOSS",
+          "isRegulatory": true
+        },
+        {
+          "id": "sanitary-inspection",
+          "name": "Sanitary Inspection & Health Clearance Fee",
+          "notes": "Mandatory for all food & beverage establishments",
+          "amount": 250,
+          "description": "City Health Office annual sanitation inspection and food handler regulatory fee",
+          "isRegulatory": true
+        },
+        {
+          "id": "zoning-clearance",
+          "name": "Zoning & Locational Clearance Fee",
+          "amount": 200,
+          "description": "City Planning & Development Office (CPDO) land use and stall zoning verification",
+          "isRegulatory": true
+        },
+        {
+          "id": "fire-safety-inspection",
+          "name": "Annual Fire Safety Inspection Fee (AFSIF)",
+          "notes": "BFP Fire Code of the Philippines compliance",
+          "amount": 200,
+          "description": "Bureau of Fire Protection (BFP) regulatory inspection assessment",
+          "isRegulatory": true
+        },
+        {
+          "id": "solid-waste-enro",
+          "name": "City Garbage & Solid Waste Environmental Fee",
+          "amount": 200,
+          "description": "City Environment & Natural Resources Office (ENRO) regulatory compliance fee",
+          "isRegulatory": true
+        }
+      ],
+      "paymentMethod": "GCash — Pay Online",
+      "receiptNumber": "CTO-OR-2026-0002",
+      "assessedAmount": 1450,
+      "assessmentNotes": "Subject to annual Sanitary Inspection Fee by the City Health Office pursuant to the Sanitation Code and Butuan Revenue Code.",
+      "gatewayProvider": "Maya (Butuan City E-TRACS Official Partner)",
+      "receiptFileSize": 245000,
+      "receiptFileType": "application/pdf",
+      "receiptFilename": "Official-Receipt-CTO-OR-2026-0002.pdf",
+      "rejectionReason": "",
+      "assessmentStatus": "assessed",
+      "receiptUploadedAt": "2026-10-13T07:10:27.543Z",
+      "transactionReference": "PAY-BVR-2026-293409",
+      "paymentMethodCategory": "e_wallet"
+    },
+    "business": {
+      "category": "Food & Refreshment / Eatery / Market Stall",
+      "businessName": "ULO SA TAO - BRANCH 2",
+      "businessDescription": "LAMI BASTA SA SULOD"
+    },
+    "vendorId": "BUT-V-000002",
+    "createdAt": "2026-10-13T12:24:48.331Z",
+    "documents": [
+      {
+        "id": "09c7aaad-92b1-44a8-88fb-d0c417993aa6",
+        "idType": "Passport",
+        "status": "Submitted",
+        "fileSize": "",
+        "filename": "Screenshot 2026-10-12 192243.png",
+        "idNumber": "56543456776",
+        "idFileName": "Screenshot 2026-10-12 192243.png",
+        "uploadedAt": "2026-10-13T12:24:48.331Z",
+        "isSkippedId": false,
+        "storagePath": ""
+      },
+      {
+        "id": "b5c3868b-0b9b-443f-9501-714f42a2165d",
+        "idType": "Vendor Registration Payment Receipt",
+        "status": "Verified",
+        "fileSize": "",
+        "filename": "Vendor-Registration-Payment-Receipt-CTO-OR-2026-0002.pdf",
+        "idNumber": "CTO-OR-2026-0002",
+        "idFileName": "Vendor-Registration-Payment-Receipt-CTO-OR-2026-0002.pdf",
+        "uploadedAt": "2026-10-13T12:24:48.331Z",
+        "isSkippedId": false,
+        "storagePath": ""
+      },
+      {
+        "id": "6a264f25-f105-4abd-bac0-6ff44810c271",
+        "idType": "Passport",
+        "status": "Submitted",
+        "fileSize": "",
+        "filename": "Screenshot 2026-10-12 192243.png",
+        "idNumber": "56543456776",
+        "idFileName": "Screenshot 2026-10-12 192243.png",
+        "uploadedAt": "2026-10-13T12:25:53.800Z",
+        "isSkippedId": false,
+        "storagePath": ""
+      },
+      {
+        "id": "afa128ae-4633-43fc-9901-22fabd55c932",
+        "idType": "Vendor Registration Payment Receipt",
+        "status": "Verified",
+        "fileSize": "",
+        "filename": "Vendor-Registration-Payment-Receipt-CTO-OR-2026-0002.pdf",
+        "idNumber": "CTO-OR-2026-0002",
+        "idFileName": "Vendor-Registration-Payment-Receipt-CTO-OR-2026-0002.pdf",
+        "uploadedAt": "2026-10-13T12:25:53.800Z",
+        "isSkippedId": false,
+        "storagePath": ""
+      }
+    ],
+    "updatedAt": "2026-10-14T02:35:36.285Z",
+    "amountPaid": 1450,
+    "isVerified": true,
+    "certificate": {
+      "status": "Active",
+      "issuedAt": "2026-10-14T02:35:36.795Z",
+      "issuedBy": "City Business Permits and Licensing Department (CBPLD)",
+      "vendorId": "BUT-V-000002",
+      "expiresAt": "2027-10-14T02:35:36.795Z",
+      "ownerName": "Ma. Irish Relleta",
+      "businessName": "ULO SA TAO - BRANCH 2",
+      "certificateNumber": "CERT-2026-000003"
+    },
+    "submittedAt": "2026-10-13T12:24:48.331Z",
+    "adminRemarks": "",
+    "currentStage": 4,
+    "paymentStatus": "verified",
+    "statusHistory": [
+      {
+        "id": "0a6ea0a0-0e60-480a-8524-ba7c35ff8e41",
+        "action": "Application Submitted",
+        "remark": "Vendor registration submitted via online portal.",
+        "actionBy": "Vendor",
+        "newStatus": "submitted",
+        "timestamp": "2026-10-13T12:24:48.331Z",
+        "previousStatus": null
+      },
+      {
+        "id": "8ec3b4aa-88ce-4f04-9741-48575ad5c3cd",
+        "action": "Status updated to approved",
+        "remark": "",
+        "actionBy": "Jeremy Gomez",
+        "newStatus": "approved",
+        "timestamp": "2026-10-14T02:35:36.795Z",
+        "previousStatus": "submitted"
+      },
+      {
+        "id": "a1c8e501-059a-4a9d-857d-f3a594af8131",
+        "action": "Status updated to approved",
+        "remark": "",
+        "actionBy": "Jeremy Gomez",
+        "newStatus": "approved",
+        "timestamp": "2026-10-14T02:35:36.828Z",
+        "previousStatus": "submitted"
+      }
+    ],
+    "verifiedEmail": "miprelleta12@gmail.com",
+    "applicationNumber": "BVR-2026-000003",
+    "verificationStatus": "Verified",
+    "actionBy": "Jeremy Gomez"
+  },
+  {
+    "id": "BVR-2026-000002",
+    "owner": {
+      "lastName": "",
+      "firstName": "",
+      "ownerName": "Ma. Irish Relleta",
+      "middleName": ""
+    },
+    "status": "approved",
+    "userId": "user_3Kd0oEGh4eXYQXgVNWbZc4CKPkn",
+    "address": {
+      "city": "Butuan City",
+      "region": "Caraga",
+      "street": "NEW ROAD NIGHT MARKET",
+      "country": "Philippines",
+      "houseNo": "STALL 2-3",
+      "barangay": "Holy Redeemer Pob.",
+      "province": "Agusan del Norte"
+    },
+    "contact": {
+      "emailAddress": "miprelleta12@gmail.com",
+      "contactNumber": "09761547673"
+    },
+    "payment": {
+      "status": "verified",
+      "currency": "PHP",
+      "amountPaid": 1450,
+      "verifiedAt": "2026-10-13T07:10:27.543Z",
+      "verifiedBy": "Admin (CBPLD Review Officer)",
+      "paymentDate": "2026-10-13T07:10:27.543Z",
+      "feeBreakdown": [
+        {
+          "id": "mayors-permit",
+          "name": "Mayor's Permit / Local Business Registration",
+          "notes": "City Tax Ordinance No. 132 as amended",
+          "amount": 500,
+          "description": "City Business Permits and Licensing Department (CBPLD) municipal authorization",
+          "isRegulatory": true
+        },
+        {
+          "id": "barangay-clearance",
+          "name": "Barangay Clearance Regulatory Fee",
+          "notes": "RA 11032 Ease of Doing Business integration",
+          "amount": 100,
+          "description": "Consolidated barangay business clearance collected at City BOSS",
+          "isRegulatory": true
+        },
+        {
+          "id": "sanitary-inspection",
+          "name": "Sanitary Inspection & Health Clearance Fee",
+          "notes": "Mandatory for all food & beverage establishments",
+          "amount": 250,
+          "description": "City Health Office annual sanitation inspection and food handler regulatory fee",
+          "isRegulatory": true
+        },
+        {
+          "id": "zoning-clearance",
+          "name": "Zoning & Locational Clearance Fee",
+          "amount": 200,
+          "description": "City Planning & Development Office (CPDO) land use and stall zoning verification",
+          "isRegulatory": true
+        },
+        {
+          "id": "fire-safety-inspection",
+          "name": "Annual Fire Safety Inspection Fee (AFSIF)",
+          "notes": "BFP Fire Code of the Philippines compliance",
+          "amount": 200,
+          "description": "Bureau of Fire Protection (BFP) regulatory inspection assessment",
+          "isRegulatory": true
+        },
+        {
+          "id": "solid-waste-enro",
+          "name": "City Garbage & Solid Waste Environmental Fee",
+          "amount": 200,
+          "description": "City Environment & Natural Resources Office (ENRO) regulatory compliance fee",
+          "isRegulatory": true
+        }
+      ],
+      "paymentMethod": "GCash — Pay Online",
+      "receiptNumber": "CTO-OR-2026-0002",
+      "assessedAmount": 1450,
+      "assessmentNotes": "Subject to annual Sanitary Inspection Fee by the City Health Office pursuant to the Sanitation Code and Butuan Revenue Code.",
+      "gatewayProvider": "Maya (Butuan City E-TRACS Official Partner)",
+      "receiptFileSize": 245000,
+      "receiptFileType": "application/pdf",
+      "receiptFilename": "Official-Receipt-CTO-OR-2026-0002.pdf",
+      "rejectionReason": "",
+      "assessmentStatus": "assessed",
+      "receiptUploadedAt": "2026-10-13T07:10:27.543Z",
+      "transactionReference": "PAY-BVR-2026-293409",
+      "paymentMethodCategory": "e_wallet"
+    },
+    "business": {
+      "category": "Food & Refreshment / Eatery / Market Stall",
+      "businessName": "ULO SA TAO",
+      "businessDescription": "LAMI BASTA SA SULOD"
+    },
+    "vendorId": "BUT-V-000002",
+    "createdAt": "2026-10-13T06:21:26.296Z",
+    "documents": [
+      {
+        "id": "6c3835ee-cebe-4f60-9ce9-21846df5cce8",
+        "idType": "Passport",
+        "status": "Submitted",
+        "fileSize": "",
+        "filename": "Screenshot 2026-10-12 192243.png",
+        "idNumber": "56543456776",
+        "idFileName": "Screenshot 2026-10-12 192243.png",
+        "uploadedAt": "2026-10-13T06:21:25.178Z",
+        "isSkippedId": false,
+        "storagePath": ""
+      },
+      {
+        "id": "f5b43d9d-4dae-4c15-a325-4d54ec8b9d85",
+        "idType": "Vendor Registration Payment Receipt",
+        "status": "Verified",
+        "fileSize": "",
+        "filename": "Vendor-Registration-Payment-Receipt-CTO-OR-2026-0002.pdf",
+        "idNumber": "CTO-OR-2026-0002",
+        "idFileName": "Vendor-Registration-Payment-Receipt-CTO-OR-2026-0002.pdf",
+        "uploadedAt": "2026-10-13T07:10:27.543Z",
+        "isSkippedId": false,
+        "storagePath": ""
+      }
+    ],
+    "updatedAt": "2026-10-13T11:01:23.141Z",
+    "amountPaid": 1450,
+    "isVerified": true,
+    "certificate": {
+      "status": "Active",
+      "issuedAt": "2026-10-13T11:01:23.141Z",
+      "issuedBy": "City Business Permits and Licensing Department (CBPLD)",
+      "vendorId": "BUT-V-000002",
+      "expiresAt": "2027-10-13T11:01:23.141Z",
+      "ownerName": "Ma. Irish Relleta",
+      "businessName": "ULO SA TAO",
+      "certificateNumber": "CERT-2026-000002"
+    },
+    "submittedAt": "2026-10-13T06:21:25.178Z",
+    "adminRemarks": "",
+    "currentStage": 4,
+    "paymentStatus": "verified",
+    "statusHistory": [
+      {
+        "id": "1aa9b7db-e905-426b-b7e8-c1c752f6ece5",
+        "action": "Application Submitted • GCash Online Payment Queued",
+        "remark": "Assessed fees: ₱1,450.00 via GCash — Pay Online. Tracking Reference: PAY-BVR-2026-293409. Status: Pending Verification.",
+        "actionBy": "Vendor",
+        "newStatus": "submitted",
+        "timestamp": "2026-10-13T06:21:25.178Z",
+        "previousStatus": null
+      }
+    ],
+    "verifiedEmail": "miprelleta12@gmail.com",
+    "applicationNumber": "BVR-2026-000002",
+    "verificationStatus": "Verified"
+  }
+]

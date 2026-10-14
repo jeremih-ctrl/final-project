@@ -34,6 +34,7 @@ export interface ActivityItem {
 
 export type AdminPaymentStatus =
   | "Unpaid"
+  | "Awaiting Cashier Payment"
   | "Pending Verification"
   | "Verified"
   | "Rejected"
@@ -98,6 +99,7 @@ export const STATUS_OPTIONS = [
 export const PAYMENT_STATUS_OPTIONS = [
   "All",
   "Unpaid",
+  "Awaiting Cashier Payment",
   "Pending Verification",
   "Verified",
   "Rejected",

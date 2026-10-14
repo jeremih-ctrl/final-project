@@ -379,6 +379,16 @@ export function updateApplication(
 
   applications[index] = updated;
   saveApplicationsToStorage(applications);
+
+  // Synchronize update to server persistent database
+  if (typeof window !== "undefined" && typeof fetch === "function") {
+    fetch(`/api/admin/applications/${encodeURIComponent(existing.applicationNumber || existing.id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updates),
+    }).catch(() => {});
+  }
+
   return updated;
 }
 
@@ -407,6 +417,14 @@ export function deleteApplication(id: string): boolean {
   }
 
   saveApplicationsToStorage(filtered);
+
+  // Synchronize deletion to server persistent database
+  if (typeof window !== "undefined" && typeof fetch === "function") {
+    fetch(`/api/admin/applications/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }).catch(() => {});
+  }
+
   return true;
 }
 

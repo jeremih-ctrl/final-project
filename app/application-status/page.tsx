@@ -44,7 +44,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { useStoredApplications, isApplicationDeleted, updateApplication } from "@/lib/application-store";
+import { useStoredApplications, isApplicationDeleted, updateApplication, createApplication } from "@/lib/application-store";
 import { VendorApplication, ApplicationStatus, PaymentInformation } from "@/lib/types/vendor-application";
 import { useSharedApplication, saveSharedApplication } from "@/lib/vendor-application-state";
 import { useVendorAuth } from "@/lib/demo-auth";
@@ -619,12 +619,9 @@ function ApplicationStatusContent() {
     setActiveAppId(null); // Clear any previous application details immediately
 
     try {
-      // Simulate realistic async lookup response time and display loading indicator
-      await new Promise((resolve) => setTimeout(resolve, 300));
-
       const normalized = trimmed.toLowerCase();
 
-      // Check stored applications
+      // Check stored applications locally first
       const foundInStore = storedApplications.find(
         (a) =>
           a.id.trim().toLowerCase() === normalized ||
@@ -638,7 +635,21 @@ function ApplicationStatusContent() {
         return;
       }
 
-      // Check shared application
+      // Query server persistent application store
+      const res = await fetch(`/api/applications/lookup?number=${encodeURIComponent(trimmed)}`);
+      if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        if (data?.application) {
+          const app = data.application;
+          createApplication(app as any);
+          setActiveAppId(app.applicationNumber || app.id);
+          setLookupError(null);
+          setSearchOpen(false);
+          return;
+        }
+      }
+
+      // Check shared application fallback
       const matchesShared =
         sharedApp.id.trim().toLowerCase() === normalized ||
         (sharedApp.applicationNumber && sharedApp.applicationNumber.trim().toLowerCase() === normalized);

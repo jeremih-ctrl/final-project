@@ -91,6 +91,7 @@ export interface SharedApplication {
   id: string; // "BVR-2026-001248"
   applicationNumber: string; // alias for id
   vendorId: string; // "BUT-V-001248"
+  userId?: string; // Clerk user ID
 
   // Nested information model (Requirement 2)
   vendor: SharedVendorInfo;
@@ -651,8 +652,91 @@ export function getSharedApplication(): SharedApplication {
   }
 }
 
+/** Normalize either a raw VendorApplication or Partial SharedApplication into a valid SharedApplication */
+export function normalizeToSharedApplication(input: any): SharedApplication {
+  if (!input) return INITIAL_APPLICATION;
+
+  const bName = input.business?.businessName || input.businessName || input.vendor?.businessName || "";
+  const oName = input.owner?.ownerName || input.ownerName || input.vendor?.name || "";
+  const email = input.contact?.emailAddress || input.email || input.vendor?.email || input.verifiedEmail || "";
+  const phone = input.contact?.contactNumber || input.contactNumber || input.vendor?.phone || "";
+  const houseNo = input.address?.houseNo || input.houseNumber || "";
+  const street = input.address?.street || input.street || "";
+  const barangay = input.address?.barangay || input.barangay || "";
+  const id = input.applicationNumber || input.id || "BVR-2026-001248";
+
+  const rawStatus = input.status || "submitted";
+  const normalizedStatus = normalizeStatus(rawStatus);
+  const adminLabel = statusToAdminLabel(normalizedStatus);
+
+  return {
+    ...INITIAL_APPLICATION,
+    ...input,
+    id,
+    applicationNumber: id,
+    userId: input.userId,
+    vendorId: input.vendorId || "",
+    status: normalizedStatus,
+    adminStatus: adminLabel,
+    verificationStatus: input.verificationStatus || "Pending",
+    isVerified: Boolean(input.isVerified),
+    currentStage: input.currentStage ?? 1,
+    businessName: bName,
+    ownerName: oName,
+    email,
+    contactNumber: phone,
+    houseNumber: houseNo,
+    street,
+    barangay,
+    city: "Butuan City",
+    province: "Agusan del Norte",
+    region: "Caraga",
+    country: "Philippines",
+    vendor: {
+      id: input.vendorId || "",
+      name: oName,
+      businessName: bName,
+      email,
+      phone,
+    },
+    business: {
+      name: bName,
+      businessName: bName,
+      category: input.business?.category || "Food & Refreshment / Market Stall",
+      address: `${houseNo} ${street}, ${barangay}, Butuan City`.trim(),
+      barangay,
+      description: input.business?.businessDescription || input.business?.description || "",
+      houseNumber: houseNo,
+      street,
+      city: "Butuan City",
+      province: "Agusan del Norte",
+      region: "Caraga",
+      country: "Philippines",
+    },
+    documents: input.documents || [],
+    payment: input.payment,
+    paymentStatus: input.payment?.status || input.paymentStatus || "unpaid",
+    assessedAmount: input.payment?.assessedAmount,
+    amountPaid: input.payment?.amountPaid,
+    paymentMethod: input.payment?.paymentMethod,
+    transactionReference: input.payment?.transactionReference,
+    paymentDate: input.payment?.paymentDate,
+    submittedAt: input.submittedAt || new Date().toISOString(),
+    submittedDate: input.submittedDate || (input.submittedAt ? new Date(input.submittedAt).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) : "Recently"),
+    updatedAt: input.updatedAt || new Date().toISOString(),
+    lastUpdatedText: input.lastUpdatedText || "Recently updated",
+    adminRemarks: input.adminRemarks || "",
+    administratorRemarks: input.adminRemarks || "",
+    correctionItems: input.correctionItems || [],
+    correctionFields: input.correctionFields || [],
+    correctionDate: input.correctionDate || null,
+    activity: input.activity || INITIAL_APPLICATION.activity,
+  };
+}
+
 /** Save updated application into localStorage and notify all listeners */
-export function saveSharedApplication(updated: SharedApplication): SharedApplication {
+export function saveSharedApplication(raw: any): SharedApplication {
+  const updated = normalizeToSharedApplication(raw);
   if (typeof window !== "undefined") {
     try {
       localStorage.setItem(SHARED_APP_STORAGE_KEY, JSON.stringify(updated));

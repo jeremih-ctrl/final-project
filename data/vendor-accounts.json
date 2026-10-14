@@ -22,10 +22,10 @@
   },
   {
     "email": "jeremygomez12344@gmail.com",
-    "name": "JEREMY GOMEZ",
-    "salt": "135df7ee0c4e9038eef113672846e696",
-    "hash": "b343d74dd81aefc81023efbef060d3d043122790417effa2ec034c8a3628bd152ccae7b56cfc7d3221da560076e6521de64fc77a7a0fe74dae67302e6f33f45a",
-    "createdAt": "2026-10-11T04:44:58.040Z"
+    "name": "Jeremy Gomez",
+    "salt": "4638866374a6d58187c46612638466b7",
+    "hash": "d036e84f5e8222381d0ecbe856450725806e9400cce60eb1093ffce51cd923d60c2972bc563c9800e4a6a5c10a28f63b4e51d8267c525bec8e35cd5b43b6dea7",
+    "createdAt": "2026-10-12T04:53:53.734Z"
   },
   {
     "email": "irish123@gmail.com",
@@ -40,5 +40,26 @@
     "salt": "f2d0cfa1806b4442e65b693ecdc6ec6c",
     "hash": "5a722cc8b3d16b2f58bd0336a71ed6baeea7a029fea670b3a189d26729161c014b7c13159e7c48a6d447671fec5aa010aefc42b2b6b7239cf07618418df2827b",
     "createdAt": "2026-10-11T10:27:43.956Z"
+  },
+  {
+    "email": "juan12345@gmail.com",
+    "name": "JUAN DELA CURZ",
+    "salt": "0f3188a0e325a4845b21894ea53b19df",
+    "hash": "d255d1a9aad76130c1b66dde3769f822c007811cc00f81ad10e5c192a4fc8d1854cfb000e73b8c2ba34144a96506ccc3ea7bdd502d9aef54b7300c748495cf38",
+    "createdAt": "2026-10-11T13:39:59.653Z"
+  },
+  {
+    "email": "jeremygomez123442@gmail.com",
+    "name": "Jeremy Gomez",
+    "salt": "e63d7f2182575c180c139fb63e01fc07",
+    "hash": "142adbaf1b492af97365e53ecfcf361deb7be898e0073c2ae1afad1bafd5a695fa419da3850365581dd2e7579cb9bdc0d7487042ce3bc3049387c84d5d49337b",
+    "createdAt": "2026-10-12T08:05:56.348Z"
+  },
+  {
+    "email": "jeremy.gomez@urios.edu.ph",
+    "name": "REY MUND",
+    "salt": "6f3a8f2037ca7184958905f16320cd13",
+    "hash": "a2f8dcbc87ae40060529306d847a46853eb9b1db3033dd43fa07475775f87973cf40bbf71cc08b3b04a7fe06ced1af24a732b5a81276e7b1749426ee34a26590",
+    "createdAt": "2026-10-12T21:51:11.575Z"
   }
 ]

@@ -17,22 +17,15 @@ import {
   Files,
   BarChart3,
 } from "lucide-react";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
 import { Sheet, SheetTrigger, SheetContent } from "@/components/ui/sheet";
+import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { useAdminAuth } from "@/lib/demo-auth";
+import { useAdminAuth, setAdminSession, clearAdminSession } from "@/lib/demo-auth";
 import { useAdminNotifications } from "@/lib/notifications-data";
+import { useAppRole } from "@/lib/clerk-roles";
+import { UserButton, useClerk, SignOutButton } from "@clerk/nextjs";
 
 interface AdminSidebarProps {
   pathname: string;
@@ -193,20 +186,147 @@ export default function AdminLayout({
   const pathname = usePathname();
   const router = useRouter();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const { session, isLoading, logout } = useAdminAuth();
+  const { session, isLoading: isLocalLoading } = useAdminAuth();
+  const { signOut } = useClerk();
+
+  const handleAdminLogout = async () => {
+    clearAdminSession();
+    await signOut({ redirectUrl: "/login" });
+  };
+  const {
+    user: clerkUser,
+    isLoaded: isClerkLoaded,
+    isSignedIn: isClerkSignedIn,
+    isAdmin: isClerkAdmin,
+    isVendor: isClerkVendor,
+    email: clerkEmail,
+  } = useAppRole();
 
   const isLoginPage = pathname === "/admin/login";
 
-  // Redirect to admin login if unauthenticated
+  // Automatically sync Clerk Admin user into local admin session state
   useEffect(() => {
-    if (!isLoginPage && !isLoading && !session) {
-      router.replace("/admin/login");
+    if (isClerkSignedIn && isClerkAdmin && !session) {
+      setAdminSession({
+        email: clerkEmail || "admin@butuan.gov.ph",
+        name: clerkUser?.fullName || "LGU Administrator",
+        title: "City Licensing Division",
+        role: "admin",
+      });
+    } else if (isClerkSignedIn && !isClerkAdmin && session) {
+      // Purge any stale admin session if the user is not an admin
+      clearAdminSession();
     }
-  }, [isLoginPage, isLoading, session, router]);
+  }, [isClerkSignedIn, isClerkAdmin, session, clerkEmail, clerkUser]);
+
+  // Redirect to unified login if completely unauthenticated
+  useEffect(() => {
+    if (
+      !isLoginPage &&
+      isClerkLoaded &&
+      !isClerkSignedIn
+    ) {
+      router.replace("/login");
+    }
+  }, [isLoginPage, isClerkLoaded, isClerkSignedIn, router]);
 
   // Standalone login page without sidebar layout
   if (isLoginPage) {
     return <>{children}</>;
+  }
+
+  // Loading state while verifying credentials
+  if (!isClerkLoaded) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-3 border-blue-500 border-t-transparent rounded-full animate-spin" />
+          <p className="text-xs font-medium text-slate-400">
+            Verifying administrator credentials...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // ROLE RESTRICTION GUARD:
+  // If user is signed in with Clerk but NOT an admin, block access to /admin
+  if (isClerkSignedIn && !isClerkAdmin) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8 text-center space-y-4 shadow-xl">
+          <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400 mx-auto flex items-center justify-center">
+            <ShieldAlert className="w-7 h-7" />
+          </div>
+          <div className="space-y-1.5">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 bg-amber-500/10 px-2.5 py-0.5 rounded-full border border-amber-500/20">
+              {isClerkVendor ? "Access Restricted • Role: Vendor" : "Access Restricted • No Valid Role"}
+            </span>
+            <h2 className="text-xl font-bold text-white">
+              Administrator Clearance Required
+            </h2>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              {isClerkVendor ? (
+                <>
+                  You are currently signed in as <strong className="text-slate-200">{clerkEmail}</strong> with the <strong className="text-slate-200">Vendor</strong> role. Access to the City Government of Butuan Licensing Admin Portal requires Administrator privileges.
+                </>
+              ) : (
+                <>
+                  You are currently signed in as <strong className="text-slate-200">{clerkEmail}</strong>, but this account has no authorized role in the system. Access to the City Government of Butuan Licensing Admin Portal requires Administrator privileges.
+                </>
+              )}
+            </p>
+          </div>
+
+          <div className="pt-2 space-y-2">
+            {isClerkVendor ? (
+              <Link
+                href="/dashboard"
+                className={cn(
+                  buttonVariants({ variant: "default" }),
+                  "w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs h-10 rounded-xl cursor-pointer"
+                )}
+              >
+                Go to Vendor Portal
+              </Link>
+            ) : (
+              <Link
+                href="/register"
+                className={cn(
+                  buttonVariants({ variant: "default" }),
+                  "w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs h-10 rounded-xl cursor-pointer"
+                )}
+              >
+                Start Vendor Registration
+              </Link>
+            )}
+
+            <SignOutButton redirectUrl="/login">
+              <button
+                type="button"
+                className="w-full text-xs font-medium text-slate-400 hover:text-white py-2 rounded-lg border border-slate-800 hover:bg-slate-800/60 transition-colors cursor-pointer"
+              >
+                Sign Out & Switch Account
+              </button>
+            </SignOutButton>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Fallback loading while redirect takes effect if unauthenticated
+  if (!session && !isClerkAdmin) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-3 border-blue-500 border-t-transparent rounded-full animate-spin" />
+          <p className="text-xs font-medium text-slate-400">
+            Redirecting to Administrator Login...
+          </p>
+        </div>
+      </div>
+    );
   }
 
   // Dynamic header page title based on current route
@@ -223,25 +343,11 @@ export default function AdminLayout({
 
   const headerTitle = getHeaderTitle(pathname);
 
-  // Protected route guard: Do not display admin dashboard or administrator information until authenticated
-  if (isLoading || !session) {
-    return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-8 h-8 border-3 border-blue-500 border-t-transparent rounded-full animate-spin" />
-          <p className="text-xs font-medium text-slate-400">
-            Verifying administrator credentials...
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-slate-50/80 text-slate-900 flex">
       {/* Desktop Sidebar (visible on lg screens) */}
       <aside className="hidden lg:flex w-64 flex-col fixed inset-y-0 z-30 shadow-xs border-r border-slate-800/90">
-        <AdminSidebar pathname={pathname} onLogout={logout} />
+        <AdminSidebar pathname={pathname} onLogout={handleAdminLogout} />
       </aside>
 
       {/* Main Content Area (offset by sidebar width on desktop) */}
@@ -266,7 +372,7 @@ export default function AdminLayout({
                 <AdminSidebar
                   pathname={pathname}
                   onNavigate={() => setMobileMenuOpen(false)}
-                  onLogout={logout}
+                  onLogout={handleAdminLogout}
                 />
               </SheetContent>
             </Sheet>
@@ -289,7 +395,7 @@ export default function AdminLayout({
             </div>
           </div>
 
-          {/* Right Header: Notification + Admin Dropdown */}
+          {/* Right Header: Notification + Admin Profile */}
           <div className="flex items-center gap-3 sm:gap-4">
             {/* Notification Bell with counter */}
             <Link
@@ -303,87 +409,18 @@ export default function AdminLayout({
 
             <Separator orientation="vertical" className="h-6 hidden sm:block" />
 
-            {/* Admin User Dropdown Menu */}
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <button
-                    type="button"
-                    className="flex items-center gap-2.5 p-1.5 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer outline-hidden"
-                  >
-                    <Avatar
-                      size="sm"
-                      className="bg-slate-900 text-white font-bold border border-slate-700"
-                    >
-                      <AvatarFallback>
-                        {session.name
-                          ? session.name
-                              .split(" ")
-                              .map((n) => n[0])
-                              .join("")
-                              .slice(0, 2)
-                              .toUpperCase()
-                          : "AD"}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="text-left hidden md:block">
-                      <span className="text-xs font-bold text-slate-900 block leading-tight">
-                        {session.name}
-                      </span>
-                      <span className="text-[11px] text-slate-500 font-medium block leading-tight">
-                        {session.title}
-                      </span>
-                    </div>
-                  </button>
-                }
-              />
-              <DropdownMenuContent
-                align="end"
-                className="w-56 p-1.5 shadow-lg border-slate-200"
-              >
-                <DropdownMenuGroup>
-                  <DropdownMenuLabel className="font-semibold text-xs px-2 py-1.5 text-slate-700">
-                    <div className="font-bold text-sm text-slate-900">
-                      {session.name}
-                    </div>
-                    <div className="text-xs font-normal text-slate-500">
-                      {session.email}
-                    </div>
-                  </DropdownMenuLabel>
-                </DropdownMenuGroup>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={() => router.push("/admin/settings")}
-                  className="text-xs py-2 cursor-pointer"
-                >
-                  <ShieldAlert className="w-4 h-4 mr-2 text-slate-500" />
-                  Profile
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => router.push("/admin/settings")}
-                  className="text-xs py-2 cursor-pointer"
-                >
-                  <Settings className="w-4 h-4 mr-2 text-slate-500" />
-                  Settings
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => router.push("/admin/help")}
-                  className="text-xs py-2 cursor-pointer"
-                >
-                  <HelpCircle className="w-4 h-4 mr-2 text-slate-500" />
-                  Help / Support
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  variant="destructive"
-                  onClick={logout}
-                  className="text-xs py-2 text-rose-600 font-medium cursor-pointer"
-                >
-                  <LogOut className="w-4 h-4 mr-2 text-rose-500" />
-                  Logout
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            {/* Authenticated Clerk User Avatar (Rose-pink Google profile icon) */}
+            {isClerkSignedIn && (
+              <div className="flex items-center">
+                <UserButton
+                  appearance={{
+                    elements: {
+                      avatarBox: "w-8 h-8 sm:w-9 sm:h-9 ring-2 ring-blue-500/30",
+                    },
+                  }}
+                />
+              </div>
+            )}
           </div>
         </header>
 

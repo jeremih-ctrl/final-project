@@ -429,10 +429,10 @@ export default function CorrectionFormPage() {
             </div>
             <div className="flex justify-center gap-3 pt-2">
               <Link
-                href="/application-status"
+                href="/dashboard/my-application"
                 className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition-colors"
               >
-                View Application Status
+                View My Application
               </Link>
               <Link
                 href="/dashboard"
@@ -492,11 +492,11 @@ export default function CorrectionFormPage() {
               </p>
             </div>
             <Link
-              href="/application-status"
+              href="/dashboard/my-application"
               className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-3.5 py-2 rounded-xl transition-colors w-fit"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
-              Back to Status
+              Back to My Application
             </Link>
           </div>
 
@@ -1346,11 +1346,11 @@ function SuccessState({
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
             <Link
-              href="/application-status"
+              href="/dashboard/my-application"
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm transition-colors cursor-pointer"
             >
               <FileText className="w-4 h-4" />
-              View Application Status
+              View My Application
             </Link>
             <Link
               href="/dashboard"

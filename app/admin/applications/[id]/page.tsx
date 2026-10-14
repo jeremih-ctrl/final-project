@@ -31,6 +31,8 @@ import {
   ExternalLink,
   FileCheck,
   ShieldCheck,
+  Landmark,
+  Loader2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -47,6 +49,8 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { useAdminAuth } from "@/lib/demo-auth";
+import { useAppRole } from "@/lib/clerk-roles";
 import {
   useSharedApplication,
   statusToAdminLabel,
@@ -131,6 +135,7 @@ export interface ReviewApplicationState {
   payment?: PaymentInformation;
   paymentStatus:
     | "Unpaid"
+    | "Awaiting Cashier Payment"
     | "Pending Verification"
     | "Verified"
     | "Rejected"
@@ -139,6 +144,7 @@ export interface ReviewApplicationState {
     | "Failed"
     | "Cancelled"
     | "Refunded";
+  receiptNumber?: string;
   assessedAmount: number;
   amountPaid: number;
   paymentMethod: string;
@@ -358,9 +364,10 @@ function mapVendorAppToReviewState(
           ],
     payment: stored.payment,
     paymentStatus: formatAdminPaymentStatus(stored.payment?.status),
+    receiptNumber: stored.payment?.receiptNumber || "",
     assessedAmount: stored.payment?.assessedAmount ?? 1450,
     amountPaid: stored.payment?.amountPaid ?? 0,
-    paymentMethod: stored.payment?.paymentMethod || "Maya / CTO Cashier",
+    paymentMethod: stored.payment?.paymentMethod || "GCash / CTO Cashier",
     transactionReference: stored.payment?.transactionReference || `PAY-${stored.applicationNumber || stored.id}`,
     paymentDate: stored.payment?.paymentDate || null,
     receiptUrl: stored.payment?.receiptUrl,
@@ -378,6 +385,7 @@ function formatAdminPaymentStatus(status?: string): ReviewApplicationState["paym
   if (!status) return "Unpaid";
   const s = status.toLowerCase().trim().replace(/[\s-]+/g, "_");
   if (s === "pending_verification") return "Pending Verification";
+  if (s === "awaiting_cashier_payment") return "Awaiting Cashier Payment";
   if (s === "verified") return "Verified";
   if (s === "rejected") return "Rejected";
   if (s === "paid") return "Verified";
@@ -549,17 +557,43 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
     verifiedAt?: string;
     rejectionReason?: string;
     amountPaid?: number;
+    receiptNumber?: string;
   } | null>(null);
 
   const [verifyPaymentDialogOpen, setVerifyPaymentDialogOpen] = useState(false);
   const [rejectPaymentDialogOpen, setRejectPaymentDialogOpen] = useState(false);
   const [receiptViewerModalOpen, setReceiptViewerModalOpen] = useState(false);
   const [paymentRejectionReason, setPaymentRejectionReason] = useState(
-    "Uploaded receipt is unclear or transaction reference does not match municipal records."
+    "Transaction reference could not be verified in municipal records or amount does not match."
   );
   const [confirmedAmountPaidInput, setConfirmedAmountPaidInput] = useState<string>("");
-  const [reviewerAdminInput, setReviewerAdminInput] = useState<string>("Admin (CBPLD Review Officer)");
-  const [verifyCheckReceiptAcknowledged, setVerifyCheckReceiptAcknowledged] = useState(true);
+  const [officialReceiptNumberInput, setOfficialReceiptNumberInput] = useState<string>("");
+  const [isVerifyingPayment, setIsVerifyingPayment] = useState(false);
+  const [verifyPaymentError, setVerifyPaymentError] = useState<string | null>(null);
+
+  const { session: adminSession } = useAdminAuth();
+  const { user: clerkUser } = useAppRole();
+
+  const currentAdminIdentity = useMemo(() => {
+    if (clerkUser?.fullName) return clerkUser.fullName;
+    if (clerkUser?.firstName) {
+      return `${clerkUser.firstName} ${clerkUser.lastName || ""}`.trim();
+    }
+    if (clerkUser?.primaryEmailAddress?.emailAddress) return clerkUser.primaryEmailAddress.emailAddress;
+    if (adminSession?.name) return adminSession.name;
+    if (adminSession?.email) return adminSession.email;
+    return "Admin (CBPLD Review Officer)";
+  }, [clerkUser, adminSession]);
+
+  useEffect(() => {
+    if (verifyPaymentDialogOpen) {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
+    }
+  }, [verifyPaymentDialogOpen]);
 
   const appState: ReviewApplicationState = {
     ...resolvedBase,
@@ -595,6 +629,10 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
       (isSharedTarget && sharedApp.paymentStatus
         ? formatAdminPaymentStatus(sharedApp.paymentStatus)
         : resolvedBase.paymentStatus),
+    receiptNumber:
+      localPaymentOverride?.receiptNumber ||
+      (isSharedTarget ? sharedApp.payment?.receiptNumber : resolvedBase.receiptNumber) ||
+      "",
     amountPaid:
       localPaymentOverride?.amountPaid ??
       (isSharedTarget && sharedApp.payment?.amountPaid !== undefined
@@ -705,85 +743,148 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
   };
 
   // Payment Verification Actions
-  const handleVerifyPaymentConfirm = () => {
-    const nowIso = new Date().toISOString();
-    const formattedDate = new Date().toLocaleDateString("en-US", {
-      month: "long",
-      day: "numeric",
-      year: "numeric",
-    });
-    const amountToConfirm =
-      Number(confirmedAmountPaidInput) || appState.amountPaid || appState.assessedAmount || 1450;
-    const reviewerAdmin = reviewerAdminInput.trim() || "Admin (CBPLD Review Officer)";
+  const handleVerifyPaymentConfirm = async () => {
+    const parsedAmount = Number(confirmedAmountPaidInput);
+    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+      setVerifyPaymentError("Please enter a valid amount received (₱).");
+      return;
+    }
 
-    const updatedPayment: PaymentInformation = {
-      assessedAmount: appState.assessedAmount,
-      currency: "PHP",
-      paymentMethod: appState.paymentMethod,
-      transactionReference: appState.transactionReference,
-      feeBreakdown: appState.payment?.feeBreakdown || [],
-      assessmentStatus: "pending_verification",
-      receiptUrl: appState.receiptUrl,
-      receiptFilename: appState.receiptFilename,
-      receiptFileType: appState.receiptFileType,
-      receiptFileSize: appState.receiptFileSize,
-      receiptUploadedAt: appState.receiptUploadedAt,
-      ...(appState.payment || {}),
-      status: "verified",
-      amountPaid: amountToConfirm,
-      paymentDate: appState.paymentDate || formattedDate,
-      verifiedBy: reviewerAdmin,
-      verifiedAt: nowIso,
-      rejectionReason: undefined,
-    };
+    const trimmedOrNumber = officialReceiptNumberInput.trim();
+    if (!trimmedOrNumber) {
+      setVerifyPaymentError("Official Receipt (OR) Number is required.");
+      return;
+    }
 
-    const verifyActivity = {
-      id: nextActivityId(),
-      title: "Payment Verified",
-      date: formattedDate,
-      description: `Payment of ${formatPhpCurrency(amountToConfirm)} via ${appState.paymentMethod} verified by ${reviewerAdmin}. Transaction reference: ${appState.transactionReference}.`,
-      type: "review" as const,
-    };
+    setIsVerifyingPayment(true);
+    setVerifyPaymentError(null);
 
-    updateApplication(appState.applicationNumber, {
-      payment: updatedPayment,
-      paymentStatus: "verified",
-      amountPaid: amountToConfirm,
-    });
+    try {
+      // Simulate confirmation processing
+      await new Promise((resolve) => setTimeout(resolve, 350));
 
-    if (isSharedTarget) {
-      saveSharedApplication({
-        ...sharedApp,
+      const nowIso = new Date().toISOString();
+      const formattedDate = new Date().toLocaleDateString("en-US", {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+      });
+      const amountToConfirm = parsedAmount;
+      const reviewerAdmin = currentAdminIdentity;
+      const orNumber = trimmedOrNumber;
+
+      const updatedPayment: PaymentInformation = {
+        assessedAmount: appState.assessedAmount,
+        currency: "PHP",
+        paymentMethod: appState.paymentMethod,
+        transactionReference: appState.transactionReference,
+        feeBreakdown: appState.payment?.feeBreakdown || [],
+        assessmentStatus: "assessed",
+        receiptNumber: orNumber,
+        receiptUrl: appState.receiptUrl || undefined,
+        receiptFilename: appState.receiptFilename || `Official-Receipt-${orNumber}.pdf`,
+        receiptFileType: "application/pdf",
+        receiptFileSize: 245000,
+        receiptUploadedAt: nowIso,
+        ...(appState.payment || {}),
+        status: "verified",
+        amountPaid: amountToConfirm,
+        paymentDate: appState.paymentDate || formattedDate,
+        verifiedBy: reviewerAdmin,
+        verifiedAt: nowIso,
+        rejectionReason: undefined,
+      };
+
+      // Construct the official verified receipt document
+      const receiptDoc = {
+        id: `doc-receipt-${appState.applicationNumber}`,
+        idType: "Vendor Registration Payment Receipt",
+        idNumber: orNumber,
+        filename: `Vendor-Registration-Payment-Receipt-${orNumber}.pdf`,
+        uploadedAt: nowIso,
+        status: "Verified" as const,
+        isSkippedId: false,
+      };
+
+      // Fetch existing documents and append official receipt, preventing duplicates
+      const storedApp = getApplication(appState.applicationNumber);
+      const existingDocs = storedApp?.documents || [];
+      const filteredDocs = existingDocs.filter(
+        (d) => d.idType !== "Vendor Registration Payment Receipt" && d.id !== receiptDoc.id
+      );
+      const updatedDocuments = [...filteredDocs, receiptDoc];
+
+      const verifyActivity = {
+        id: nextActivityId(),
+        title: "Payment Verified & Official Receipt Recorded",
+        date: formattedDate,
+        description: `Payment of ${formatPhpCurrency(amountToConfirm)} via ${appState.paymentMethod} verified by ${reviewerAdmin}. Official Receipt #${orNumber} recorded and published to vendor's Documents section.`,
+        type: "review" as const,
+      };
+
+      updateApplication(appState.applicationNumber, {
         payment: updatedPayment,
         paymentStatus: "verified",
         amountPaid: amountToConfirm,
+        documents: updatedDocuments,
       });
+
+      if (isSharedTarget) {
+        const existingSharedDocs = sharedApp.documents || [];
+        const filteredSharedDocs = existingSharedDocs.filter(
+          (d) => d.idType !== "Vendor Registration Payment Receipt" && d.id !== receiptDoc.id
+        );
+        saveSharedApplication({
+          ...sharedApp,
+          payment: updatedPayment,
+          paymentStatus: "verified",
+          amountPaid: amountToConfirm,
+          documents: [
+            ...filteredSharedDocs,
+            {
+              id: receiptDoc.id,
+              filename: receiptDoc.filename,
+              idType: "Vendor Registration Payment Receipt",
+              uploadedAt: nowIso,
+              status: "Verified",
+              submitted: true,
+            },
+          ],
+        });
+      }
+
+      addVendorNotification({
+        type: "payment-verified",
+        title: "Vendor Registration Payment Receipt Available",
+        message: `Your payment of ${formatPhpCurrency(amountToConfirm)} has been verified. Official Receipt #${orNumber} is now available in your Documents section.`,
+        fullMessage: `Your payment of ${formatPhpCurrency(amountToConfirm)} via ${appState.paymentMethod} has been verified by ${reviewerAdmin}. Official Receipt (OR No. ${orNumber}) has been recorded and delivered directly to your Documents section. Your vendor registration application is continuing under formal administrative evaluation.`,
+        applicationNumber: appState.applicationNumber,
+        vendorName: appState.businessName,
+        status: appState.status,
+        actionLabel: "View Receipt in Documents",
+        actionUrl: "/dashboard/documents",
+        href: "/dashboard/documents",
+        priority: "high",
+      });
+
+      setLocalPaymentOverride({
+        status: "Verified",
+        verifiedBy: reviewerAdmin,
+        verifiedAt: nowIso,
+        amountPaid: amountToConfirm,
+        receiptNumber: orNumber,
+        rejectionReason: undefined,
+      });
+      setLocalActivityOverride([verifyActivity, ...appState.activity]);
+      setVerifyPaymentDialogOpen(false);
+      showNotification("Payment verified successfully and official receipt delivered to vendor Documents section.", "success");
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : "Payment verification failed. Please try again.";
+      setVerifyPaymentError(errorMsg);
+      showNotification(errorMsg, "destructive");
+    } finally {
+      setIsVerifyingPayment(false);
     }
-
-    addVendorNotification({
-      type: "application-status-updated",
-      title: "Payment Verified",
-      message: `Your payment of ${formatPhpCurrency(amountToConfirm)} for application ${appState.applicationNumber} has been verified by the administrator.`,
-      fullMessage: `Your payment of ${formatPhpCurrency(amountToConfirm)} (Ref: ${appState.transactionReference}) has been verified by ${reviewerAdmin}. Your vendor registration application is continuing under formal CBPLD administrative evaluation. Note: Verified payment does not automatically approve the registration.`,
-      applicationNumber: appState.applicationNumber,
-      vendorName: appState.businessName,
-      status: appState.status,
-      actionLabel: "View Application",
-      actionUrl: "/application-status",
-      href: "/application-status",
-      priority: "normal",
-    });
-
-    setLocalPaymentOverride({
-      status: "Verified",
-      verifiedBy: reviewerAdmin,
-      verifiedAt: nowIso,
-      amountPaid: amountToConfirm,
-      rejectionReason: undefined,
-    });
-    setLocalActivityOverride([verifyActivity, ...appState.activity]);
-    setVerifyPaymentDialogOpen(false);
-    showNotification("Payment verified successfully. Application is now eligible for approval review.", "success");
   };
 
   const handleRejectPaymentConfirm = () => {
@@ -798,7 +899,7 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
       day: "numeric",
       year: "numeric",
     });
-    const reviewerAdmin = "Admin (CBPLD Review Officer)";
+    const reviewerAdmin = currentAdminIdentity;
     const reason = paymentRejectionReason.trim();
 
     const updatedPayment: PaymentInformation = {
@@ -2006,7 +2107,7 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
                     <ShieldCheck className="w-4 h-4 text-emerald-700 shrink-0" />
                     <div>
                       <span className="font-bold text-emerald-900 block">
-                        Payment Verified by Administrator
+                        Payment Verified & Official Receipt Issued
                       </span>
                       <span className="text-[11px] text-emerald-800">
                         Verified by <strong>{appState.verifiedBy || "CBPLD Treasury Officer"}</strong> on{" "}
@@ -2017,7 +2118,7 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
                               year: "numeric",
                             })
                           : appState.paymentDate || "Recorded session"}
-                        . Confirmed amount: {formatPhpCurrency(appState.amountPaid || appState.assessedAmount)}.
+                        . Confirmed amount: {formatPhpCurrency(appState.amountPaid || appState.assessedAmount)}. Official Receipt (OR No. {appState.receiptNumber || "CTO-OR-2026-VERIFIED"}) has been delivered to the vendor&apos;s Documents section.
                       </span>
                     </div>
                   </div>
@@ -2030,17 +2131,17 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2 font-bold text-rose-900">
                       <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
-                      <span>Payment Proof Rejected</span>
+                      <span>Payment Details Rejected</span>
                     </div>
                     <Badge className="bg-rose-100 text-rose-800 border-rose-300 text-[11px] font-semibold">
                       Rejected
                     </Badge>
                   </div>
                   <p className="text-[11px] text-rose-900 font-medium leading-relaxed pl-6">
-                    <strong>Rejection Reason:</strong> &ldquo;{appState.rejectionReason || "Uploaded receipt could not be verified or transaction reference is missing."}&rdquo;
+                    <strong>Rejection Reason:</strong> &ldquo;{appState.rejectionReason || "Submitted payment details could not be verified against municipal records."}&rdquo;
                   </p>
                   <span className="text-[10px] text-rose-700 block pl-6">
-                    The vendor has been notified and can submit a corrected proof of payment through their portal.
+                    The vendor has been notified and can submit corrected payment details through their portal.
                   </span>
                 </div>
               ) : appState.paymentStatus === "Pending Verification" ? (
@@ -2049,15 +2150,32 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
                     <Clock className="w-4 h-4 text-amber-700 shrink-0" />
                     <div>
                       <span className="font-bold text-amber-900 block">
-                        Payment Proof Awaiting Admin Review
+                        GCash Online Payment — Pending Admin Verification
                       </span>
                       <span className="text-[11px] text-amber-800">
-                        Vendor has submitted proof of payment. Please inspect the receipt below and confirm against municipal accounts before approving this registration.
+                        Vendor submitted GCash transaction reference #{appState.transactionReference} for {formatPhpCurrency(appState.amountPaid || appState.assessedAmount)}. Please confirm receipt in City Treasury / GCash Merchant account and verify below to issue the official receipt to the vendor.
                       </span>
                     </div>
                   </div>
                   <Badge className="bg-amber-100 text-amber-900 border-amber-300 self-start sm:self-auto shrink-0 font-semibold text-[11px]">
                     Pending Verification
+                  </Badge>
+                </div>
+              ) : appState.paymentStatus === "Awaiting Cashier Payment" ? (
+                <div className="p-3.5 rounded-xl bg-sky-50 border border-sky-300 text-xs text-sky-950 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <Landmark className="w-4 h-4 text-sky-700 shrink-0" />
+                    <div>
+                      <span className="font-bold text-sky-900 block">
+                        CTO Cashier Selected — Awaiting In-Person Payment
+                      </span>
+                      <span className="text-[11px] text-sky-800">
+                        Vendor chose to pay at the City Treasurer&apos;s Office Cashier window. When cashier settlement is complete and physical receipt is issued, record the Official Receipt Number and click &ldquo;Verify Payment&rdquo; below to deliver the receipt to the vendor.
+                      </span>
+                    </div>
+                  </div>
+                  <Badge className="bg-sky-100 text-sky-900 border-sky-300 self-start sm:self-auto shrink-0 font-semibold text-[11px]">
+                    Awaiting Cashier Payment
                   </Badge>
                 </div>
               ) : (
@@ -2066,10 +2184,10 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
                     <AlertCircle className="w-4 h-4 text-slate-600 shrink-0" />
                     <div>
                       <span className="font-bold text-slate-900 block">
-                        No Proof of Payment Submitted
+                        Payment Not Yet Settled
                       </span>
                       <span className="text-[11px] text-slate-600">
-                        Vendor has not yet submitted proof of payment for assessment reference {appState.transactionReference}.
+                        Payment has not been recorded for assessment reference {appState.transactionReference}.
                       </span>
                     </div>
                   </div>
@@ -2079,93 +2197,103 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
                 </div>
               )}
 
-              {/* Uploaded Proof of Payment Area */}
+              {/* Payment Evidence & Official Receipt Section */}
               <div className="p-4 rounded-xl border border-slate-200/90 bg-slate-50/70 space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Receipt className="w-4 h-4 text-blue-700" />
                     <span className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-                      Uploaded Proof of Payment
+                      Payment Evidence &amp; Official Receipt
                     </span>
                   </div>
-                  {appState.receiptUploadedAt && (
-                    <span className="text-[11px] text-slate-500">
-                      Uploaded {appState.receiptUploadedAt}
-                    </span>
-                  )}
+                  <span className="text-[11px] text-slate-500">
+                    Channel: <strong className="text-slate-700">{appState.paymentMethod || "GCash / CTO Cashier"}</strong>
+                  </span>
                 </div>
 
-                {appState.receiptUrl ? (
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-xl bg-white border border-slate-200">
-                    <div className="flex items-center gap-3 min-w-0">
-                      {appState.receiptFileType?.includes("pdf") || (appState.receiptFilename && appState.receiptFilename.toLowerCase().endsWith(".pdf")) ? (
-                        <div className="w-12 h-12 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center font-bold text-xs shrink-0 shadow-2xs">
-                          PDF
+                {appState.paymentStatus === "Verified" ? (
+                  <div className="p-3.5 rounded-xl bg-white border border-emerald-200 shadow-2xs space-y-2.5">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                          <CheckCircle2 className="w-5 h-5" />
                         </div>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => setReceiptViewerModalOpen(true)}
-                          className="w-12 h-12 rounded-xl border border-slate-200 overflow-hidden shrink-0 bg-slate-100 cursor-pointer hover:opacity-85 transition-opacity"
-                          title="Click to view full receipt"
-                        >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={appState.receiptUrl}
-                            alt="Receipt Thumbnail"
-                            className="w-full h-full object-cover"
-                          />
-                        </button>
-                      )}
-                      <div className="min-w-0 space-y-0.5">
-                        <p className="text-xs font-bold text-slate-900 truncate font-mono">
-                          {appState.receiptFilename || "payment-receipt-document"}
-                        </p>
-                        <p className="text-[11px] text-slate-500">
-                          {appState.receiptFileType || "Image / Document"} •{" "}
-                          {appState.receiptFileSize
-                            ? `${(appState.receiptFileSize / 1024).toFixed(0)} KB`
-                            : "Verified attachment"}{" "}
-                          • Ref: <span className="font-mono font-semibold text-slate-700">{appState.transactionReference}</span>
-                        </p>
+                        <div>
+                          <p className="text-xs font-bold text-slate-900">
+                            Vendor Registration Payment Receipt
+                          </p>
+                          <p className="text-[11px] text-slate-500 font-mono">
+                            OR No: <strong className="text-emerald-700">{appState.receiptNumber || `CTO-OR-2026-${appState.applicationNumber.replace(/[^0-9]/g, "").slice(-4) || "1042"}`}</strong>
+                          </p>
+                        </div>
                       </div>
+                      <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 self-start sm:self-auto text-[11px]">
+                        Delivered to Documents
+                      </Badge>
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setReceiptViewerModalOpen(true)}
-                        className="text-xs font-semibold h-8 px-3 rounded-lg cursor-pointer text-blue-700 border-blue-200 hover:bg-blue-50"
-                      >
-                        <Eye className="w-3.5 h-3.5 mr-1" />
-                        View Receipt
-                      </Button>
-                      <a
-                        href={appState.receiptUrl}
-                        download={appState.receiptFilename || `receipt-${appState.applicationNumber}.jpg`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className={cn(
-                          buttonVariants({ variant: "outline", size: "sm" }),
-                          "text-xs font-semibold h-8 px-3 rounded-lg text-slate-700 border-slate-300 hover:bg-slate-100 gap-1"
-                        )}
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                        Download
-                      </a>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 border-t border-slate-100 text-xs">
+                      <div>
+                        <span className="text-[10px] uppercase text-slate-400 block font-medium">Amount Confirmed</span>
+                        <span className="font-bold font-mono text-slate-900">{formatPhpCurrency(appState.amountPaid || appState.assessedAmount)}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] uppercase text-slate-400 block font-medium">Reference Code</span>
+                        <span className="font-mono text-slate-800 truncate block">{appState.transactionReference}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] uppercase text-slate-400 block font-medium">Issue Date</span>
+                        <span className="text-slate-800">{appState.verifiedAt ? new Date(appState.verifiedAt).toLocaleDateString() : "Current session"}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] uppercase text-slate-400 block font-medium">Verified By</span>
+                        <span className="text-slate-800 truncate block">{appState.verifiedBy || "CBPLD Treasury"}</span>
+                      </div>
                     </div>
                   </div>
                 ) : (
-                  <div className="p-4 rounded-xl bg-white border border-dashed border-slate-300 text-center space-y-1.5">
-                    <AlertCircle className="w-5 h-5 text-slate-400 mx-auto" />
-                    <p className="text-xs font-semibold text-slate-700">
-                      No Receipt File Uploaded Yet
-                    </p>
-                    <p className="text-[11px] text-slate-500">
-                      The vendor selected {appState.paymentMethod || "payment channel"} with reference #{appState.transactionReference}, but has not uploaded proof of payment.
-                    </p>
+                  <div className="p-3.5 rounded-xl bg-white border border-slate-200 shadow-2xs space-y-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
+                      <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100">
+                        <span className="text-[10px] uppercase text-slate-400 block font-medium">Payment Mode</span>
+                        <span className="font-semibold text-slate-900 mt-0.5 block">{appState.paymentMethod || "GCash — Pay Online"}</span>
+                      </div>
+                      <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100">
+                        <span className="text-[10px] uppercase text-slate-400 block font-medium">Declared Amount</span>
+                        <span className="font-mono font-bold text-slate-900 mt-0.5 block">{formatPhpCurrency(appState.amountPaid || appState.assessedAmount)}</span>
+                      </div>
+                      <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100">
+                        <span className="text-[10px] uppercase text-slate-400 block font-medium">Transaction / Tracking Ref</span>
+                        <span className="font-mono font-bold text-blue-700 mt-0.5 block truncate">{appState.transactionReference}</span>
+                      </div>
+                    </div>
+
+                    <div className="p-2.5 rounded-lg bg-blue-50/60 border border-blue-100 text-[11px] text-blue-900 flex items-start gap-2">
+                      <Info className="w-3.5 h-3.5 text-blue-600 shrink-0 mt-0.5" />
+                      <span>
+                        {appState.paymentStatus === "Awaiting Cashier Payment"
+                          ? "Vendor will present assessment reference at the CTO Cashier window. Authorized staff confirms receipt of funds and records the OR Number."
+                          : "Vendor paid via GCash QR code and declared transaction reference above. Staff validates with municipal accounts and records the OR Number."}
+                      </span>
+                    </div>
+
+                    {appState.receiptUrl && (
+                      <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                        <span className="text-xs text-slate-600 font-mono truncate max-w-[200px]">
+                          {appState.receiptFilename || "attached-receipt-file"}
+                        </span>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setReceiptViewerModalOpen(true)}
+                          className="text-xs font-semibold h-7 px-2.5 text-blue-700"
+                        >
+                          <Eye className="w-3 h-3 mr-1" />
+                          View Attachment
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -2231,7 +2359,15 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
                     size="sm"
                     disabled={isPaymentVerified}
                     onClick={() => {
-                      setConfirmedAmountPaidInput(String(appState.amountPaid || appState.assessedAmount));
+                      setConfirmedAmountPaidInput(
+                        String(appState.assessedAmount || appState.amountPaid || 1450)
+                      );
+                      const fallbackOr =
+                        appState.receiptNumber ||
+                        appState.payment?.receiptNumber ||
+                        `CTO-OR-2026-${appState.applicationNumber.replace(/[^0-9]/g, "").slice(-4) || "1042"}`;
+                      setOfficialReceiptNumberInput(fallbackOr);
+                      setVerifyPaymentError(null);
                       setVerifyPaymentDialogOpen(true);
                     }}
                     className={cn(
@@ -3459,109 +3595,171 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
       </Dialog>
 
       {/* ================= VERIFY PAYMENT DIALOG ================= */}
-      <Dialog open={verifyPaymentDialogOpen} onOpenChange={setVerifyPaymentDialogOpen}>
-        <DialogContent className="sm:max-w-md bg-white rounded-2xl p-6 shadow-xl border border-slate-200">
-          <DialogHeader>
-            <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center mb-1">
-              <ShieldCheck className="w-5 h-5 text-emerald-600" />
-            </div>
-            <DialogTitle className="text-lg font-bold text-slate-900">
-              Verify Vendor Payment Proof
-            </DialogTitle>
-            <DialogDescription className="text-xs sm:text-sm text-slate-600">
-              Confirm that the submitted payment receipt and transaction reference have been checked against official LGU accounts.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="py-2 space-y-3">
-            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/90 text-xs sm:text-sm space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-slate-500">Application Number:</span>
-                <span className="font-mono font-bold text-slate-900">{appState.applicationNumber}</span>
+      <Dialog
+        open={verifyPaymentDialogOpen}
+        onOpenChange={(open) => {
+          if (!open && !isVerifyingPayment) {
+            setVerifyPaymentError(null);
+            setVerifyPaymentDialogOpen(false);
+          }
+        }}
+      >
+        <DialogContent
+          showCloseButton={!isVerifyingPayment}
+          className="sm:max-w-md w-full !max-h-[90dvh] !flex !flex-col !p-0 !gap-0 overflow-hidden bg-white rounded-2xl shadow-2xl border border-slate-200"
+          style={{ display: "flex", flexDirection: "column", maxHeight: "90dvh" }}
+        >
+          {/* Modal Header - Fixed/Pinned */}
+          <div className="px-5 py-4 border-b border-slate-100 shrink-0 bg-white">
+            <DialogHeader className="gap-1 pr-7 text-left">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0">
+                  <ShieldCheck className="w-4.5 h-4.5 text-emerald-600" />
+                </div>
+                <div>
+                  <DialogTitle className="text-base sm:text-lg font-bold text-slate-900 leading-tight">
+                    Verify Vendor Payment Proof
+                  </DialogTitle>
+                  <DialogDescription className="text-xs text-slate-500 mt-0.5">
+                    Confirm the payment details and issue the official receipt.
+                  </DialogDescription>
+                </div>
               </div>
-              <div className="flex items-center justify-between">
-                <span className="text-slate-500">Business / Owner:</span>
-                <span className="font-bold text-slate-900 truncate max-w-[200px]">{appState.businessName}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-slate-500">Payment Channel:</span>
-                <span className="font-semibold text-slate-900">{appState.paymentMethod}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-slate-500">Transaction Reference:</span>
-                <span className="font-mono font-bold text-blue-700">{appState.transactionReference}</span>
-              </div>
-              <div className="flex items-center justify-between pt-1 border-t border-slate-200">
-                <span className="text-slate-500">Assessed Fee:</span>
-                <span className="font-mono font-bold text-slate-900">{formatPhpCurrency(appState.assessedAmount)}</span>
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <label htmlFor="confirmed-amount-input" className="text-xs font-semibold text-slate-700 block">
-                Confirmed Amount Received (PHP)
-              </label>
-              <Input
-                id="confirmed-amount-input"
-                type="number"
-                value={confirmedAmountPaidInput || String(appState.amountPaid || appState.assessedAmount)}
-                onChange={(e) => setConfirmedAmountPaidInput(e.target.value)}
-                placeholder="1450"
-                className="h-10 text-sm font-mono bg-slate-50 border-slate-300 focus:bg-white rounded-xl"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <label htmlFor="reviewer-admin-input" className="text-xs font-semibold text-slate-700 block">
-                Reviewing Administrator
-              </label>
-              <Input
-                id="reviewer-admin-input"
-                value={reviewerAdminInput}
-                onChange={(e) => setReviewerAdminInput(e.target.value)}
-                placeholder="Admin (CBPLD Review Officer)"
-                className="h-10 text-xs sm:text-sm bg-slate-50 border-slate-300 focus:bg-white rounded-xl"
-              />
-            </div>
-
-            <label className="flex items-start gap-2.5 p-3 rounded-xl bg-emerald-50/60 border border-emerald-200 cursor-pointer select-none">
-              <Checkbox
-                id="verify-check-receipt"
-                checked={verifyCheckReceiptAcknowledged}
-                onCheckedChange={(c) => setVerifyCheckReceiptAcknowledged(Boolean(c))}
-                className="mt-0.5"
-              />
-              <span className="text-xs text-emerald-950 font-medium leading-relaxed">
-                I confirm that I have personally inspected the uploaded proof of payment and verified the transaction with official LGU Butuan account / CTO records.
-              </span>
-            </label>
-
-            <div className="p-2.5 rounded-xl bg-blue-50 border border-blue-200 text-[11px] text-blue-900 flex items-start gap-2">
-              <Info className="w-3.5 h-3.5 text-blue-600 shrink-0 mt-0.5" />
-              <span>
-                <strong>Policy:</strong> Verifying payment enables application approval review, but does <em>not</em> automatically approve the vendor registration.
-              </span>
-            </div>
+            </DialogHeader>
           </div>
 
-          <DialogFooter className="gap-2 sm:gap-0 pt-2">
+          {/* Modal Content - Independently Scrollable */}
+          <div className="overflow-y-auto flex-1 min-h-0 px-5 py-4 space-y-3.5">
+            {/* Payment Information Summary */}
+            <div className="rounded-xl bg-slate-50/90 border border-slate-200/80 p-3 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2.5">
+                <div>
+                  <span className="text-slate-500 block text-[11px] font-medium">Application Number</span>
+                  <span className="font-mono font-bold text-slate-900">{appState.applicationNumber}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 block text-[11px] font-medium">Business / Owner</span>
+                  <span
+                    className="font-semibold text-slate-900 truncate block"
+                    title={`${appState.businessName}${appState.ownerName ? ` (${appState.ownerName})` : ""}`}
+                  >
+                    {appState.businessName}
+                    {appState.ownerName ? ` • ${appState.ownerName}` : ""}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-500 block text-[11px] font-medium">Payment Method</span>
+                  <span className="font-semibold text-slate-800">
+                    {appState.paymentMethod || "Over the Counter (Treasury)"}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-500 block text-[11px] font-medium">Transaction Reference</span>
+                  <span className="font-mono font-semibold text-blue-700">
+                    {appState.transactionReference || "N/A"}
+                  </span>
+                </div>
+                <div className="sm:col-span-2 pt-2 border-t border-slate-200/70 flex items-center justify-between">
+                  <span className="text-slate-600 font-semibold text-xs">Assessed Fee</span>
+                  <span className="font-mono font-bold text-slate-900 text-sm">
+                    {formatPhpCurrency(appState.assessedAmount)}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Admin Input Fields */}
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <label htmlFor="confirmed-amount-input" className="text-xs font-semibold text-slate-700 block">
+                  Amount Received (₱)
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-semibold text-sm">
+                    ₱
+                  </span>
+                  <Input
+                    id="confirmed-amount-input"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    disabled={isVerifyingPayment}
+                    value={confirmedAmountPaidInput}
+                    onChange={(e) => {
+                      setConfirmedAmountPaidInput(e.target.value);
+                      if (verifyPaymentError) setVerifyPaymentError(null);
+                    }}
+                    placeholder={String(appState.assessedAmount || 1450)}
+                    className="h-9.5 pl-7 text-sm font-mono bg-white border-slate-300 rounded-xl focus-visible:ring-1 focus-visible:ring-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label htmlFor="official-receipt-input" className="text-xs font-semibold text-slate-700 block">
+                  Official Receipt (OR) Number
+                </label>
+                <Input
+                  id="official-receipt-input"
+                  disabled={isVerifyingPayment}
+                  value={officialReceiptNumberInput}
+                  onChange={(e) => {
+                    setOfficialReceiptNumberInput(e.target.value);
+                    if (verifyPaymentError) setVerifyPaymentError(null);
+                  }}
+                  placeholder="e.g. CTO-OR-2026-0042"
+                  className="h-9.5 text-xs sm:text-sm font-mono bg-white border-slate-300 rounded-xl focus-visible:ring-1 focus-visible:ring-emerald-500"
+                />
+              </div>
+            </div>
+
+            {/* Error Message */}
+            {verifyPaymentError && (
+              <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                <span>{verifyPaymentError}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Sticky Footer */}
+          <div className="px-5 py-3.5 border-t border-slate-200/80 bg-slate-50/90 shrink-0 flex items-center justify-end gap-2.5">
             <Button
               type="button"
               variant="outline"
-              onClick={() => setVerifyPaymentDialogOpen(false)}
-              className="text-xs font-semibold rounded-xl h-9"
+              disabled={isVerifyingPayment}
+              onClick={() => {
+                setVerifyPaymentError(null);
+                setVerifyPaymentDialogOpen(false);
+              }}
+              className="text-xs font-semibold rounded-xl h-9 px-4 hover:bg-slate-100 cursor-pointer"
             >
               Cancel
             </Button>
             <Button
               type="button"
-              disabled={!verifyCheckReceiptAcknowledged}
+              disabled={
+                isVerifyingPayment ||
+                !confirmedAmountPaidInput.trim() ||
+                Number(confirmedAmountPaidInput) <= 0 ||
+                !officialReceiptNumberInput.trim()
+              }
               onClick={handleVerifyPaymentConfirm}
-              className="text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl h-9 cursor-pointer"
+              className="text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl h-9 px-4 cursor-pointer shadow-xs inline-flex items-center"
             >
-              Confirm Payment Verification
+              {isVerifyingPayment ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                  Verifying...
+                </>
+              ) : (
+                <>
+                  <ShieldCheck className="w-3.5 h-3.5 mr-1.5" />
+                  Verify Payment
+                </>
+              )}
             </Button>
-          </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
 

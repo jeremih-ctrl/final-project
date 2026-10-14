@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -47,9 +47,12 @@ import {
   Sparkles,
   LayoutGrid,
   List,
+  FileDown,
+  AlertCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useStoredApplications } from "@/lib/application-store";
+import { useStoredApplications, createApplication } from "@/lib/application-store";
+import { exportVendorRegistryPDF } from "@/lib/vendor-registry-pdf";
 
 interface CertifiedVendorRecord {
   id: string; // Vendor ID e.g. BUT-V-001248
@@ -73,6 +76,28 @@ export default function AdminVendorsPage() {
   const [selectedBarangay, setSelectedBarangay] = useState("All");
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [viewMode, setViewMode] = useState<"table" | "cards">("table");
+
+  // Export Feedback Notification State
+  const [exportNotice, setExportNotice] = useState<{
+    type: "success" | "warning";
+    message: string;
+  } | null>(null);
+
+  // Synchronize applications from server persistent store on mount
+  useEffect(() => {
+    fetch("/api/admin/applications", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.applications && Array.isArray(data.applications)) {
+          data.applications.forEach((app: any) => {
+            createApplication(app);
+          });
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to load server applications for admin:", err);
+      });
+  }, []);
 
   // Certificate Modal State
   const [selectedVendor, setSelectedVendor] = useState<CertifiedVendorRecord | null>(null);
@@ -148,52 +173,40 @@ export default function AdminVendorsPage() {
     setIsCertificateOpen(true);
   };
 
-  // Export CSV Handler
-  const handleExportCSV = () => {
-    const headers = [
-      "Vendor ID",
-      "Application Number",
-      "Business Name",
-      "Proprietor Name",
-      "Category",
-      "Barangay",
-      "Operating Address",
-      "Contact Number",
-      "Email Address",
-      "Certification Date",
-      "Validity Expiry",
-      "Status",
-    ];
+  // Export PDF Handler
+  const handleExportPDF = () => {
+    if (filteredVendors.length === 0) {
+      setExportNotice({
+        type: "warning",
+        message:
+          "Cannot export: No vendor records match your search or filter criteria. Adjust your search or filters to generate a report.",
+      });
+      setTimeout(() => setExportNotice(null), 5000);
+      return;
+    }
 
-    const rows = filteredVendors.map((v) => [
-      v.id,
-      v.applicationNumber,
-      `"${v.businessName.replace(/"/g, '""')}"`,
-      `"${v.ownerName.replace(/"/g, '""')}"`,
-      `"${v.category.replace(/"/g, '""')}"`,
-      `"${v.barangay.replace(/"/g, '""')}"`,
-      `"${v.street.replace(/"/g, '""')}"`,
-      v.contactNumber,
-      v.emailAddress,
-      v.certifiedDate,
-      v.expiryDate,
-      v.status,
-    ]);
+    try {
+      const result = exportVendorRegistryPDF({
+        vendors: filteredVendors,
+        totalRegistryCount: combinedVendors.length,
+        searchQuery,
+        selectedBarangay,
+        selectedCategory,
+      });
 
-    const csvContent =
-      "data:text/csv;charset=utf-8," +
-      [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
-
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute(
-      "download",
-      `butuan_city_certified_vendors_${new Date().toISOString().slice(0, 10)}.csv`
-    );
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+      setExportNotice({
+        type: "success",
+        message: `Export completed: "${result.filename}" (${result.count} ${result.count === 1 ? "vendor record" : "vendor records"}) downloaded.`,
+      });
+      setTimeout(() => setExportNotice(null), 4500);
+    } catch (error) {
+      console.error("Failed to export vendor registry PDF:", error);
+      setExportNotice({
+        type: "warning",
+        message: "An error occurred while generating the PDF. Please try again.",
+      });
+      setTimeout(() => setExportNotice(null), 5000);
+    }
   };
 
   return (
@@ -219,11 +232,11 @@ export default function AdminVendorsPage() {
             type="button"
             variant="outline"
             size="sm"
-            onClick={handleExportCSV}
+            onClick={handleExportPDF}
             className="text-xs font-semibold text-slate-700 hover:text-slate-900 border-slate-300 hover:bg-slate-100 cursor-pointer gap-1.5 shadow-2xs"
           >
-            <Download className="w-3.5 h-3.5" />
-            <span>Export Registry (CSV)</span>
+            <FileDown className="w-3.5 h-3.5" />
+            <span>Export Registry (PDF)</span>
           </Button>
 
           <Link
@@ -238,6 +251,35 @@ export default function AdminVendorsPage() {
           </Link>
         </div>
       </div>
+
+      {/* Export Notification Banner */}
+      {exportNotice && (
+        <div
+          className={cn(
+            "p-3.5 rounded-xl border text-xs sm:text-sm flex items-center justify-between gap-2.5 animate-in fade-in transition-all",
+            exportNotice.type === "warning"
+              ? "bg-amber-50 border-amber-200 text-amber-900"
+              : "bg-emerald-50 border-emerald-200 text-emerald-900"
+          )}
+        >
+          <div className="flex items-center gap-2.5">
+            {exportNotice.type === "warning" ? (
+              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+            ) : (
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            )}
+            <span className="font-medium">{exportNotice.message}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setExportNotice(null)}
+            className="text-xs opacity-70 hover:opacity-100 font-semibold px-1.5 py-0.5 rounded cursor-pointer"
+            aria-label="Dismiss notice"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Metrics Row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

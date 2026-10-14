@@ -41,110 +41,39 @@ export const BUTUAN_PAYMENT_GATEWAY_CONFIG: GatewayIntegrationConfig = {
 export interface PaymentMethodOption {
   id: string;
   name: string;
-  category: "e_wallet" | "card" | "online_banking" | "otc";
-  categoryLabel: "A. E-wallets" | "B. ATM and bank cards" | "C. Online banking and bank transfer" | "D. Over-the-counter payments";
+  category: "e_wallet" | "otc";
+  categoryLabel: string;
   description: string;
-  iconName: "Wallet" | "CreditCard" | "Building" | "Store";
+  iconName: "Wallet" | "Store";
   supportedByProvider: boolean;
   channelDetails: string;
   instructions: string;
 }
 
 export const PAYMENT_METHODS: PaymentMethodOption[] = [
-  // A. E-wallets
-  {
-    id: "maya",
-    name: "Maya",
-    category: "e_wallet",
-    categoryLabel: "A. E-wallets",
-    description: "Official digital wallet partner for Butuan City E-TRACS portal",
-    iconName: "Wallet",
-    supportedByProvider: true,
-    channelDetails: "Maya Wallet • Maya QR Ph",
-    instructions: "Pay instantly using your registered Maya account or scan the official LGU QR Ph code.",
-  },
   {
     id: "gcash",
-    name: "GCash",
+    name: "GCash — Pay Online",
     category: "e_wallet",
-    categoryLabel: "A. E-wallets",
-    description: "Supported through Maya Checkout QR Ph interoperability",
+    categoryLabel: "Online Payment",
+    description: "Pay using the displayed QR code on your phone.",
     iconName: "Wallet",
     supportedByProvider: true,
-    channelDetails: "GCash App • QR Ph Interoperable",
-    instructions: "Scan the Maya-generated QR Ph dynamic code via your GCash app scanner.",
+    channelDetails: "GCash App • InstaPay QR Ph",
+    instructions:
+      "Open GCash, scan the QR code, confirm recipient and amount, and complete payment.",
   },
-
-  // B. ATM and bank cards
-  {
-    id: "debit_card",
-    name: "ATM / Debit Card",
-    category: "card",
-    categoryLabel: "B. ATM and bank cards",
-    description: "BancNet, Visa, and Mastercard debit cards",
-    iconName: "CreditCard",
-    supportedByProvider: true,
-    channelDetails: "BancNet • Visa Debit • Mastercard Debit",
-    instructions: "Process securely via provider's hosted payment screen. ATM PIN is never requested or stored.",
-  },
-  {
-    id: "credit_card",
-    name: "Credit Card",
-    category: "card",
-    categoryLabel: "B. ATM and bank cards",
-    description: "Visa and Mastercard credit cards via secure gateway",
-    iconName: "CreditCard",
-    supportedByProvider: true,
-    channelDetails: "Visa • Mastercard",
-    instructions: "Encrypted card checkout processed exclusively on the provider's PCI-DSS compliant page.",
-  },
-
-  // C. Online banking and bank transfer
-  {
-    id: "landbank_linkbiz",
-    name: "Landbank Link.BizPortal",
-    category: "online_banking",
-    categoryLabel: "C. Online banking and bank transfer",
-    description: "Official government payment portal for Landbank account holders",
-    iconName: "Building",
-    supportedByProvider: true,
-    channelDetails: "Landbank Accounts • BancNet Member Banks",
-    instructions: "Select City Government of Butuan as merchant on Landbank Link.BizPortal and enter your Assessment Reference.",
-  },
-  {
-    id: "online_bank_transfer",
-    name: "Participating Online Banking",
-    category: "online_banking",
-    categoryLabel: "C. Online banking and bank transfer",
-    description: "BDO, BPI, UnionBank, RCBC via Maya Online Banking gateway",
-    iconName: "Building",
-    supportedByProvider: true,
-    channelDetails: "Direct Bank Login via Secure Gateway Redirect",
-    instructions: "Authorize transfer directly in your banking app using your bank's two-factor authentication.",
-  },
-
-  // D. Over-the-counter payments
   {
     id: "cto_cashier",
-    name: "City Treasurer's Office (CTO) Cashier",
+    name: "City Treasurer's Office (CTO) Cashier — Pay In Person",
     category: "otc",
-    categoryLabel: "D. Over-the-counter payments",
-    description: "In-person cash payment at Butuan City Hall BOSS / Treasury counter",
+    categoryLabel: "In-Person Payment",
+    description: "Pay at the City Treasurer's Office.",
     iconName: "Store",
     supportedByProvider: true,
-    channelDetails: "City Hall Treasury Cashier • Robinsons BOSS Center",
-    instructions: "Present your Application Number and Assessment Slip at the CTO Cashier window to pay and receive your official municipal receipt.",
-  },
-  {
-    id: "otc_payment_centers",
-    name: "Authorized Payment Centers",
-    category: "otc",
-    categoryLabel: "D. Over-the-counter payments",
-    description: "Bayad Center, M Lhuillier, and partner branches nationwide",
-    iconName: "Store",
-    supportedByProvider: true,
-    channelDetails: "Bayad Center • M Lhuillier • Cebuana Lhuillier",
-    instructions: "Present your 12-digit Assessment Reference slip at any authorized payment center counter.",
+    channelDetails: "City Hall BOSS Treasury Counter",
+    instructions:
+      "Present your Application Number and pay at the City Treasurer's Office cashier window.",
   },
 ];
 
@@ -509,23 +438,53 @@ export function generateAssessmentReference(appNumber?: string): string {
 
 // ─── LGU Official Payment Channel Instructions ──────────────────────────────
 
+export const GCASH_PAYMENT_CONFIG = {
+  id: "gcash",
+  name: "GCash — Pay Online",
+  qrCodePath: "/gcash-qr.png",
+  recipientName: "City Government of Butuan",
+  accountNotice:
+    "InstaPay QR Code interoperable with GCash. Always confirm the recipient name upon scanning.",
+  instructions: [
+    "Open the GCash app on your mobile phone.",
+    "Tap Scan QR and point your camera at the QR code.",
+    "Verify that the recipient is City Government of Butuan and the amount matches your official assessment.",
+    "Complete the transaction in GCash.",
+    "Enter your GCash transaction reference number, amount paid, and payment date below.",
+  ],
+};
+
+export const CTO_CASHIER_INSTRUCTIONS = {
+  id: "cto_cashier",
+  name: "City Treasurer's Office (CTO) Cashier — Pay In Person",
+  location:
+    "Ground Floor, Business One-Stop Shop (BOSS), Butuan City Hall Complex, J.P. Rosales Ave., Butuan City",
+  hours: "Monday to Friday, 8:00 AM – 5:00 PM",
+  instructions: [
+    "Proceed to the City Treasurer's Office (CTO) Cashier window at Butuan City Hall BOSS Center.",
+    "Inform the cashier that the payment is for Vendor Registration and provide your Application Number.",
+    "Pay the official registration fee in cash and retain your official municipal receipt.",
+    "Authorized staff will record your payment, and your verified receipt will appear directly in your Documents section.",
+  ],
+};
+
 export const LGU_EWALLET_INSTRUCTIONS = {
-  accountName: "LGU BUTUAN",
-  accountNumber: "09674382253",
-  providerNotice: "Maya / GCash QR Ph (Official LGU Butuan Merchant Account)",
+  accountName: "City Government of Butuan",
+  accountNumber: "Scan GCash / InstaPay QR",
+  providerNotice: "GCash — Pay Online (Official QR Code)",
   instructions:
-    "1. Open your Maya or GCash app.\n2. Enter the official LGU E-Wallet number 09674382253 or scan the verified LGU QR code.\n3. Verify that the recipient name displays 'LGU BUTUAN'.\n4. Enter the exact assessed amount in Philippine Pesos (PHP).\n5. Complete the payment and take a screenshot or download the official transaction receipt showing the reference number and date.",
-  qrCodePlaceholderLabel: "Official LGU Butuan E-Wallet QR Code Placeholder — Administrator can upload official verified QR code image here",
-  isOfficialQrAvailable: false, // Explicitly false per instruction: do not invent fake QR code
+    "1. Open your GCash app.\n2. Tap Scan QR and scan the official code.\n3. Verify that the recipient name displays 'City Government of Butuan'.\n4. Confirm the exact assessed fee amount and complete payment.\n5. Enter your transaction reference number and date.",
+  qrCodePath: "/gcash-qr.png",
+  isOfficialQrAvailable: true,
 };
 
 export const LGU_BANK_TRANSFER_INSTRUCTIONS = {
   bankName: "Land Bank of the Philippines (Landbank)",
   accountName: "LGU BUTUAN",
-  accountNumber: "Bank details to be provided by the administrator.", // Required fallback per specification
-  paymentReferenceRequirement: "Application Reference (e.g. PAY-BVR-...) or Registered Business Name",
+  accountNumber: "Bank details to be provided by the administrator.",
+  paymentReferenceRequirement: "Application Reference or Registered Business Name",
   instructions:
-    "1. Transfer via Landbank Link.BizPortal, online banking, or over-the-counter bank deposit.\n2. Ensure recipient account name matches 'LGU BUTUAN'.\n3. Input your Application Reference in the transfer description or remarks.\n4. Save the transaction confirmation receipt, bank slip, or deposit voucher for upload.",
+    "1. For online payments, use the official GCash QR code.\n2. For in-person payments, visit the City Treasurer's Office (CTO) Cashier.",
 };
 
 /**
@@ -551,6 +510,18 @@ export function getPaymentStatusBadgeConfig(status?: PaymentStatus | string): {
         label: "Pending Verification",
         badgeClass: "bg-amber-50 text-amber-800 border-amber-300 font-semibold",
         dotColor: "bg-amber-500",
+      };
+    case "awaiting_cashier_payment":
+      return {
+        label: "Awaiting Cashier Payment",
+        badgeClass: "bg-blue-50 text-blue-700 border-blue-300 font-semibold",
+        dotColor: "bg-blue-500",
+      };
+    case "awaiting_payment":
+      return {
+        label: "Awaiting Payment",
+        badgeClass: "bg-blue-50 text-blue-800 border-blue-300 font-semibold",
+        dotColor: "bg-blue-500",
       };
     case "rejected":
       return {

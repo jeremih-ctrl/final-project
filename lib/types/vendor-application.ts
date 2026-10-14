@@ -20,6 +20,8 @@ export type ApplicationStatus =
 
 export type PaymentStatus =
   | "unpaid"
+  | "awaiting_payment"
+  | "awaiting_cashier_payment"
   | "pending_verification"
   | "pending"
   | "verified"
@@ -191,6 +193,10 @@ export interface VendorApplication {
   applicationNumber: string;
   /** Official Vendor ID issued upon municipal accreditation (e.g. "BUT-V-001248") */
   vendorId?: string;
+  /** Persistent Clerk user ID linked to this application */
+  userId?: string;
+  /** Verified primary email from Clerk authentication */
+  verifiedEmail?: string;
 
   // 2. Application status
   /** Current lifecycle status */

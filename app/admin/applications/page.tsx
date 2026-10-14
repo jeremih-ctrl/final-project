@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import {
   FileCheck2,
@@ -58,6 +58,7 @@ import {
   useDeletedApplicationIds,
   deleteAdminApplicationRecord,
   isDemoOrMockApplication,
+  createApplication,
 } from "@/lib/application-store";
 import { cn } from "@/lib/utils";
 import {
@@ -88,6 +89,22 @@ export default function AdminApplicationsPage() {
   const [selectedStatus, setSelectedStatus] = useState<string>("All");
   const [selectedBarangay, setSelectedBarangay] = useState<string>("All Barangays");
   const [selectedPaymentStatus, setSelectedPaymentStatus] = useState<string>("All");
+
+  // Fetch and synchronize persistent applications from server database
+  useEffect(() => {
+    fetch("/api/admin/applications", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.applications && Array.isArray(data.applications)) {
+          data.applications.forEach((app: any) => {
+            createApplication(app);
+          });
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to load server applications for admin:", err);
+      });
+  }, []);
 
   // Deletion confirmation dialog state
   const [deleteTargetApp, setDeleteTargetApp] = useState<AdminApplication | null>(null);
@@ -153,7 +170,9 @@ export default function AdminApplicationsPage() {
         let pStatus: AdminPaymentStatus = "Unpaid";
         if (rawPay?.status) {
           const s = rawPay.status.toLowerCase().replace(/[\s-]+/g, "_");
-          if (s === "pending_verification" || s === "pending") {
+          if (s === "awaiting_cashier_payment") {
+            pStatus = "Awaiting Cashier Payment";
+          } else if (s === "pending_verification" || s === "pending") {
             pStatus = "Pending Verification";
           } else if (s === "verified" || s === "paid") {
             pStatus = "Verified";
@@ -218,7 +237,7 @@ export default function AdminApplicationsPage() {
           amountPaid: rawPay?.amountPaid ?? 0,
           transactionReference: rawPay?.transactionReference || `PAY-${app.applicationNumber || app.id}`,
           paymentDate: rawPay?.paymentDate || null,
-          paymentMethod: rawPay?.paymentMethod || "Maya",
+          paymentMethod: rawPay?.paymentMethod || "GCash",
         };
       });
 

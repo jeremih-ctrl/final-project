@@ -1,191 +1,48 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, Suspense } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { SignIn, SignOutButton } from "@clerk/nextjs";
+import { useAppRole } from "@/lib/clerk-roles";
 import {
-  Store,
+  Shield,
   ArrowLeft,
-  Mail,
-  Lock,
-  Eye,
-  EyeOff,
-  AlertCircle,
-  CheckCircle2,
   HelpCircle,
+  ShieldCheck,
+  ShieldAlert,
+  ArrowRight,
+  LogOut,
+  Search,
+  FileCheck2,
 } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { setVendorSession } from "@/lib/demo-auth";
-import { getApplications } from "@/lib/application-store";
 
-export default function LoginPage() {
+function LoginContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectUrl = searchParams.get("redirect_url");
+  const authRedirectTarget = redirectUrl && redirectUrl.startsWith("/") && !redirectUrl.startsWith("//")
+    ? `/auth-redirect?redirect_url=${encodeURIComponent(redirectUrl)}`
+    : "/auth-redirect";
+  const { isLoaded, isSignedIn, isAdmin, isVendor, isUnauthorized, email } = useAppRole();
 
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [authError, setAuthError] = useState<string | null>(null);
-
-  // Validation state
-  const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
-  const [touched, setTouched] = useState<{ email?: boolean; password?: boolean }>({});
-
-  // Forgot password dialog state
-  const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false);
-  const [forgotEmail, setForgotEmail] = useState("");
-  const [forgotEmailSent, setForgotEmailSent] = useState(false);
-  const [forgotEmailError, setForgotEmailError] = useState("");
-
-  const validateEmail = (val: string): string | undefined => {
-    const trimmed = val.trim();
-    if (!trimmed) {
-      return "Email address is required.";
-    }
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(trimmed)) {
-      return "Please enter a valid email address.";
-    }
-    return undefined;
-  };
-
-  const validatePassword = (val: string): string | undefined => {
-    if (!val) {
-      return "Password is required.";
-    }
-    return undefined;
-  };
-
-  const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value;
-    setEmail(val);
-    if (authError) {
-      setAuthError(null);
-    }
-    if (touched.email) {
-      setErrors((prev) => ({ ...prev, email: validateEmail(val) }));
-    }
-  };
-
-  const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value;
-    setPassword(val);
-    if (authError) {
-      setAuthError(null);
-    }
-    if (touched.password) {
-      setErrors((prev) => ({ ...prev, password: validatePassword(val) }));
-    }
-  };
-
-  const handleEmailBlur = () => {
-    setTouched((prev) => ({ ...prev, email: true }));
-    setErrors((prev) => ({ ...prev, email: validateEmail(email) }));
-  };
-
-  const handlePasswordBlur = () => {
-    setTouched((prev) => ({ ...prev, password: true }));
-    setErrors((prev) => ({ ...prev, password: validatePassword(password) }));
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (isSubmitting) return;
-
-    setAuthError(null);
-
-    const emailErr = validateEmail(email);
-    const passErr = validatePassword(password);
-
-    setTouched({ email: true, password: true });
-    setErrors({ email: emailErr, password: passErr });
-
-    if (emailErr || passErr) {
-      return;
-    }
-
-    setIsSubmitting(true);
-
-    try {
-      const res = await fetch("/api/auth/vendor/login", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          email: email.trim(),
-          password,
-        }),
-      });
-
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        setAuthError(
-          errorData.error || "Invalid email or password. Please check your credentials and try again."
-        );
-        setIsSubmitting(false);
-        return;
+  // If already signed in via Clerk, automatically redirect to the permitted portal
+  useEffect(() => {
+    if (isLoaded && isSignedIn) {
+      if (isAdmin) {
+        router.replace("/admin");
+      } else {
+        router.replace(authRedirectTarget);
       }
-
-      const data = await res.json();
-      const user = data.user || {};
-
-      // Match with stored application for enriched profile name if available
-      const storedApps = getApplications();
-      const foundApp = storedApps.find(
-        (a) => a.contact.emailAddress.toLowerCase() === email.trim().toLowerCase()
-      );
-      const emailPrefix = email.split("@")[0].replace(/[._-]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-      const resolvedName = foundApp?.owner.ownerName || user.name || emailPrefix || "Registered Vendor";
-
-      setVendorSession({
-        email: email.trim(),
-        name: resolvedName,
-        role: "Local Vendor",
-      });
-
-      router.push("/dashboard");
-    } catch (err) {
-      console.error("Login authentication request failed:", err);
-      setAuthError("Invalid email or password. Please check your credentials and try again.");
-    } finally {
-      setIsSubmitting(false);
     }
-  };
-
-  const handleForgotSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const err = validateEmail(forgotEmail);
-    if (err) {
-      setForgotEmailError(err);
-      return;
-    }
-    setForgotEmailError("");
-    setForgotEmailSent(true);
-  };
-
-  const handleCloseForgotDialog = () => {
-    setForgotPasswordOpen(false);
-    setForgotEmailSent(false);
-    setForgotEmail("");
-    setForgotEmailError("");
-  };
+  }, [isLoaded, isSignedIn, isAdmin, router, authRedirectTarget]);
 
   return (
-    <main className="min-h-screen bg-slate-50/60 flex flex-col justify-center items-center p-4 sm:p-6">
+    <main className="min-h-screen bg-slate-50/60 flex flex-col justify-center items-center p-4 sm:p-6 selection:bg-blue-100 selection:text-blue-900">
       <div className="w-full max-w-md space-y-6">
-        {/* Header Branding */}
+        {/* Header Branding - Unified Portal Access for Vendors & LGU Administrators */}
         <div className="text-center space-y-2">
           <Link
             href="/"
@@ -195,271 +52,247 @@ export default function LoginPage() {
             <span>Back to Home</span>
           </Link>
           <div className="mx-auto w-12 h-12 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-xs">
-            <Store className="w-6 h-6" />
+            <Shield className="w-6 h-6" />
           </div>
-          <h2 className="text-xs font-bold text-blue-700 tracking-wider uppercase">
-            Vendor Portal
-          </h2>
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-[11px] font-semibold uppercase tracking-wider">
+            <span>City Government of Butuan</span>
+          </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-            Welcome Back
+            Sign In / Sign Up
           </h1>
           <p className="text-sm text-slate-600">
-            Sign in to your Vendor Portal account.
+            One unified entry point for registered vendors and authorized LGU personnel.
           </p>
         </div>
 
-        {/* Login Form Card */}
-        <Card className="shadow-md border-slate-200 bg-white rounded-2xl overflow-hidden">
-          <CardContent className="p-6 sm:p-8 space-y-5">
-            {authError && (
-              <div
-                role="alert"
-                aria-live="polite"
-                className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-xs sm:text-sm flex items-start gap-2.5 animate-in fade-in"
+        {/* STATE A: User signed in as Administrator (shown briefly or if redirecting) */}
+        {isLoaded && isSignedIn && isAdmin && (
+          <div className="p-4 rounded-2xl bg-blue-50/80 border border-blue-200 text-blue-900 text-xs space-y-3 shadow-md">
+            <div className="flex items-center gap-2 font-bold text-blue-800 text-sm">
+              <ShieldCheck className="w-4 h-4 shrink-0 text-blue-600" />
+              <span>Signed In As Administrator</span>
+            </div>
+            <p className="text-blue-800/90 text-xs leading-relaxed">
+              You are currently signed in as <strong className="underline">{email}</strong> with Administrator clearance.
+            </p>
+            <div className="pt-1 flex flex-col sm:flex-row gap-2">
+              <Link
+                href="/admin"
+                className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs transition-colors text-center"
               >
-                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" aria-hidden="true" />
-                <span className="font-medium">{authError}</span>
-              </div>
-            )}
-            <form onSubmit={handleSubmit} noValidate className="space-y-4">
-              {/* Email Address Field */}
-              <div className="space-y-1.5">
-                <label
-                  htmlFor="vendor-email"
-                  className="block text-xs font-bold text-slate-700 uppercase tracking-wider"
-                >
-                  Email Address
-                </label>
-                <div className="relative">
-                  <Mail
-                    className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none"
-                    aria-hidden="true"
-                  />
-                  <Input
-                    id="vendor-email"
-                    name="email"
-                    type="email"
-                    autoComplete="email"
-                    placeholder="juan@email.com"
-                    value={email}
-                    onChange={handleEmailChange}
-                    onBlur={handleEmailBlur}
-                    aria-invalid={Boolean(errors.email)}
-                    aria-describedby={errors.email ? "vendor-email-error" : undefined}
-                    className={cn(
-                      "pl-10 h-10 text-sm bg-slate-50/60 border-slate-300 focus:bg-white focus:border-blue-500 rounded-xl w-full transition-colors",
-                      errors.email &&
-                        "border-rose-400 focus:border-rose-500 focus:ring-rose-200 bg-rose-50/20"
-                    )}
-                  />
-                </div>
-                {errors.email && (
-                  <p
-                    id="vendor-email-error"
-                    role="alert"
-                    className="text-xs text-rose-600 mt-1 flex items-center gap-1 font-medium"
-                  >
-                    <AlertCircle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-                    <span>{errors.email}</span>
-                  </p>
-                )}
-              </div>
-
-              {/* Password Field */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <label
-                    htmlFor="vendor-password"
-                    className="block text-xs font-bold text-slate-700 uppercase tracking-wider"
-                  >
-                    Password
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setForgotEmail(email);
-                      setForgotPasswordOpen(true);
-                    }}
-                    className="text-xs font-semibold text-blue-600 hover:text-blue-800 hover:underline cursor-pointer focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-blue-600 rounded"
-                  >
-                    Forgot Password?
-                  </button>
-                </div>
-                <div className="relative">
-                  <Lock
-                    className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none"
-                    aria-hidden="true"
-                  />
-                  <Input
-                    id="vendor-password"
-                    name="password"
-                    type={showPassword ? "text" : "password"}
-                    autoComplete="current-password"
-                    placeholder="Enter your password"
-                    value={password}
-                    onChange={handlePasswordChange}
-                    onBlur={handlePasswordBlur}
-                    aria-invalid={Boolean(errors.password)}
-                    aria-describedby={errors.password ? "vendor-password-error" : undefined}
-                    className={cn(
-                      "pl-10 pr-10 h-10 text-sm bg-slate-50/60 border-slate-300 focus:bg-white focus:border-blue-500 rounded-xl w-full transition-colors",
-                      errors.password &&
-                        "border-rose-400 focus:border-rose-500 focus:ring-rose-200 bg-rose-50/20"
-                    )}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword((prev) => !prev)}
-                    aria-label={showPassword ? "Hide password" : "Show password"}
-                    title={showPassword ? "Hide password" : "Show password"}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:text-slate-700 p-1.5 rounded-lg cursor-pointer transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    {showPassword ? (
-                      <EyeOff className="w-4 h-4" aria-hidden="true" />
-                    ) : (
-                      <Eye className="w-4 h-4" aria-hidden="true" />
-                    )}
-                  </button>
-                </div>
-                {errors.password && (
-                  <p
-                    id="vendor-password-error"
-                    role="alert"
-                    className="text-xs text-rose-600 mt-1 flex items-center gap-1 font-medium"
-                  >
-                    <AlertCircle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-                    <span>{errors.password}</span>
-                  </p>
-                )}
-              </div>
-
-              {/* Submit Button */}
-              <div className="pt-2">
-                <Button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="w-full h-10 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm rounded-xl cursor-pointer shadow-xs transition-colors"
-                >
-                  {isSubmitting ? "Signing In..." : "Sign In"}
-                </Button>
-              </div>
-            </form>
-
-            {/* Registration link */}
-            <div className="pt-3 border-t border-slate-100 text-center">
-              <p className="text-xs sm:text-sm text-slate-600">
-                Don&apos;t have an account?{" "}
-                <Link
-                  href="/register"
-                  className="font-semibold text-blue-700 hover:text-blue-900 hover:underline"
-                >
-                  Register here
-                </Link>
-              </p>
-            </div>
-
-            {/* Vendor Access Guidance Note */}
-            <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 text-[11px] text-slate-500 text-center flex items-center justify-center gap-1.5">
-              <HelpCircle className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-              <span>Use your registered vendor email and password to access your account.</span>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Forgot Password Modal */}
-      <Dialog open={forgotPasswordOpen} onOpenChange={setForgotPasswordOpen}>
-        <DialogContent className="sm:max-w-md bg-white rounded-2xl p-6 shadow-xl border border-slate-200">
-          <DialogHeader>
-            <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center mb-1">
-              <Lock className="w-5 h-5 text-blue-600" />
-            </div>
-            <DialogTitle className="text-lg font-bold text-slate-900">
-              Reset Your Password
-            </DialogTitle>
-            <DialogDescription className="text-xs sm:text-sm text-slate-600">
-              Enter your registered vendor email address and we will send you a password recovery link.
-            </DialogDescription>
-          </DialogHeader>
-
-          {forgotEmailSent ? (
-            <div className="py-3 space-y-3">
-              <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs sm:text-sm flex items-start gap-2.5">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-bold">Password reset email sent!</p>
-                  <p className="text-emerald-800 text-xs mt-0.5">
-                    If an account exists for <span className="font-medium underline">{forgotEmail}</span>, instructions have been sent to your inbox.
-                  </p>
-                </div>
-              </div>
-              <DialogFooter className="pt-2">
-                <Button
-                  type="button"
-                  onClick={handleCloseForgotDialog}
-                  className="w-full text-xs font-semibold rounded-xl bg-blue-600 hover:bg-blue-700 text-white"
-                >
-                  Close
-                </Button>
-              </DialogFooter>
-            </div>
-          ) : (
-            <form onSubmit={handleForgotSubmit} className="py-2 space-y-4">
-              <div className="space-y-1.5">
-                <label
-                  htmlFor="forgot-email"
-                  className="block text-xs font-bold text-slate-700 uppercase tracking-wider"
-                >
-                  Email Address
-                </label>
-                <div className="relative">
-                  <Mail
-                    className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none"
-                    aria-hidden="true"
-                  />
-                  <Input
-                    id="forgot-email"
-                    type="email"
-                    placeholder="juan@email.com"
-                    value={forgotEmail}
-                    onChange={(e) => {
-                      setForgotEmail(e.target.value);
-                      if (forgotEmailError) setForgotEmailError("");
-                    }}
-                    className={cn(
-                      "pl-10 h-10 text-sm bg-slate-50 border-slate-300 rounded-xl w-full",
-                      forgotEmailError && "border-rose-400 focus:border-rose-500"
-                    )}
-                  />
-                </div>
-                {forgotEmailError && (
-                  <p role="alert" className="text-xs text-rose-600 mt-1 flex items-center gap-1 font-medium">
-                    <AlertCircle className="w-3.5 h-3.5" />
-                    <span>{forgotEmailError}</span>
-                  </p>
-                )}
-              </div>
-
-              <DialogFooter className="gap-2 sm:gap-0 pt-2">
+                <span>Go to Admin Portal</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+              <SignOutButton redirectUrl="/login">
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={handleCloseForgotDialog}
-                  className="text-xs font-semibold rounded-xl h-9"
+                  className="w-full sm:w-auto h-9 border-blue-300 bg-white hover:bg-blue-50 text-blue-800 font-semibold text-xs rounded-xl cursor-pointer gap-1.5"
                 >
-                  Cancel
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>Switch Account</span>
                 </Button>
+              </SignOutButton>
+            </div>
+          </div>
+        )}
+
+        {/* STATE B: User signed in as Vendor (shown briefly while redirecting) */}
+        {isLoaded && isSignedIn && isVendor && (
+          <div className="p-4 rounded-2xl bg-blue-50/80 border border-blue-200 text-blue-900 text-xs space-y-3 shadow-md">
+            <div className="flex items-center gap-2 font-bold text-blue-800 text-sm">
+              <ShieldCheck className="w-4 h-4 shrink-0 text-blue-600" />
+              <span>Signed In As Vendor</span>
+            </div>
+            <p className="text-blue-800/90 text-xs leading-relaxed">
+              You are currently signed in as <strong className="underline">{email}</strong> with Vendor permissions. Redirecting to your dashboard...
+            </p>
+            <div className="pt-1 flex flex-col sm:flex-row gap-2">
+              <Link
+                href="/dashboard"
+                className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs transition-colors text-center"
+              >
+                <span>Go to Vendor Dashboard</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+              <SignOutButton redirectUrl="/login">
                 <Button
-                  type="submit"
-                  className="text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-xl h-9"
+                  type="button"
+                  variant="outline"
+                  className="w-full sm:w-auto h-9 border-blue-300 bg-white hover:bg-blue-50 text-blue-800 font-semibold text-xs rounded-xl cursor-pointer gap-1.5"
                 >
-                  Send Reset Link
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>Switch Account</span>
                 </Button>
-              </DialogFooter>
-            </form>
-          )}
-        </DialogContent>
-      </Dialog>
+              </SignOutButton>
+            </div>
+          </div>
+        )}
+
+        {/* STATE C: User signed in but NO valid assigned role (Unauthorized state) */}
+        {isLoaded && isSignedIn && isUnauthorized && (
+          <div className="p-5 rounded-2xl bg-amber-50/90 border border-amber-200 text-amber-950 text-xs space-y-4 shadow-md">
+            <div className="flex items-center gap-2.5 font-bold text-amber-800 text-sm">
+              <ShieldAlert className="w-5 h-5 shrink-0 text-amber-600" />
+              <span>No Valid Role Assigned</span>
+            </div>
+            <p className="text-amber-900/90 text-xs leading-relaxed">
+              You have successfully authenticated with Clerk as <strong className="underline text-amber-950">{email}</strong>. However, this account does not currently have an authorized <strong>Vendor</strong> or <strong>Administrator</strong> role in the Butuan Vendors Registration System.
+            </p>
+
+            <div className="space-y-2 pt-1 border-t border-amber-200/80">
+              <p className="text-[11px] text-amber-800 font-medium">
+                Safe next steps:
+              </p>
+              <div className="flex flex-col gap-2">
+                <Link
+                  href="/register"
+                  className={cn(
+                    buttonVariants({ variant: "default" }),
+                    "w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs h-9.5 rounded-xl cursor-pointer justify-center"
+                  )}
+                >
+                  <FileCheck2 className="w-4 h-4 mr-1.5" />
+                  <span>Complete Vendor Registration</span>
+                </Link>
+
+                <Link
+                  href="/application-status"
+                  className={cn(
+                    buttonVariants({ variant: "outline" }),
+                    "w-full border-amber-300 bg-white hover:bg-amber-100/50 text-amber-900 font-semibold text-xs h-9.5 rounded-xl cursor-pointer justify-center"
+                  )}
+                >
+                  <Search className="w-4 h-4 mr-1.5 text-amber-700" />
+                  <span>Track Application Without Login</span>
+                </Link>
+
+                <SignOutButton redirectUrl="/login">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="w-full h-9 text-slate-600 hover:text-slate-900 hover:bg-amber-100/50 font-medium text-xs rounded-xl cursor-pointer gap-1.5"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>Sign Out &amp; Use Another Account</span>
+                  </Button>
+                </SignOutButton>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Unified Clerk-Powered Sign-In Component (shown when not signed in) */}
+        {!isSignedIn && (
+          <div className="w-full flex justify-center">
+            <SignIn
+              routing="hash"
+              fallbackRedirectUrl={authRedirectTarget}
+              forceRedirectUrl={authRedirectTarget}
+              signUpUrl="/sign-up"
+              appearance={{
+                variables: {
+                  colorPrimary: "#2563eb",
+                  colorPrimaryForeground: "#ffffff",
+                  colorForeground: "#0f172a",
+                  colorMutedForeground: "#475569",
+                  colorBackground: "#ffffff",
+                  colorInput: "#f8fafc",
+                  colorInputForeground: "#0f172a",
+                  borderRadius: "0.75rem",
+                  fontFamily: "var(--font-sans), system-ui, sans-serif",
+                },
+                elements: {
+                  rootBox: "w-full",
+                  cardBox:
+                    "w-full shadow-md rounded-2xl border border-slate-200 bg-white overflow-hidden",
+                  card: "w-full bg-white border-0 shadow-none p-6 sm:p-8 space-y-4",
+                  header: "hidden",
+                  formButtonPrimary:
+                    "w-full h-10 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm rounded-xl cursor-pointer shadow-xs transition-colors",
+                  formFieldInput:
+                    "h-10 text-sm bg-slate-50/60 border-slate-300 text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-blue-500 rounded-xl w-full transition-colors",
+                  formFieldLabel:
+                    "text-xs font-bold text-slate-700 uppercase tracking-wider",
+                  socialButtonsBlockButton:
+                    "w-full h-10 border-slate-300 hover:bg-slate-50 text-slate-800 font-semibold text-xs sm:text-sm rounded-xl cursor-pointer shadow-2xs transition-colors",
+                  socialButtonsBlockButtonText:
+                    "text-slate-800 font-semibold text-xs sm:text-sm",
+                  dividerLine: "bg-slate-200",
+                  dividerText:
+                    "text-slate-500 font-semibold text-[11px] uppercase tracking-wider bg-white px-2",
+                  footer: "pt-3 border-t border-slate-100 text-center",
+                  footerAction: "text-xs sm:text-sm text-slate-600",
+                  footerActionText: "text-xs sm:text-sm text-slate-600",
+                  footerActionLink:
+                    "font-semibold text-blue-700 hover:text-blue-900 hover:underline",
+                  formFieldAction:
+                    "text-xs font-semibold text-blue-600 hover:text-blue-800 hover:underline",
+                  identityPreviewText: "text-slate-700 font-medium text-sm",
+                  identityPreviewEditButton:
+                    "text-blue-600 hover:text-blue-800 text-xs font-semibold hover:underline",
+                },
+              }}
+            />
+          </div>
+        )}
+
+        {/* Vendor Registration & Track Application Guidance Links */}
+        <div className="space-y-3">
+          <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 text-[11px] text-slate-500 text-center flex items-center justify-center gap-1.5">
+            <HelpCircle className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            <span>Use your registered Google account or email credentials to access your portal.</span>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-2 px-1">
+            <span>
+              Applying for a new permit?{" "}
+              <Link
+                href="/register"
+                className="font-semibold text-blue-700 hover:text-blue-900 hover:underline"
+              >
+                Register
+              </Link>
+            </span>
+            <span>
+              Need status lookup?{" "}
+              <Link
+                href="/application-status"
+                className="font-semibold text-emerald-700 hover:text-emerald-900 hover:underline"
+              >
+                Track Status
+              </Link>
+            </span>
+          </div>
+        </div>
+
+        {/* Return to Public Homepage navigation */}
+        <div className="pt-2 text-center">
+          <Link
+            href="/"
+            className="text-xs text-slate-400 hover:text-slate-600 transition-colors"
+          >
+            Return to Public Homepage
+          </Link>
+        </div>
+      </div>
     </main>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-slate-50/60 flex items-center justify-center p-4">
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-8 h-8 border-3 border-blue-600 border-t-transparent rounded-full animate-spin" />
+            <p className="text-xs font-medium text-slate-500">Loading portal login...</p>
+          </div>
+        </div>
+      }
+    >
+      <LoginContent />
+    </Suspense>
   );
 }

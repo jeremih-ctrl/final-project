@@ -20,6 +20,7 @@ export type NotificationCategory =
 
 export type AdminNotificationType =
   | "new-application"
+  | "payment-submitted"
   | "correction-submitted"
   | "correction-requested"
   | "application-approved"
@@ -95,6 +96,7 @@ export function getCategoryForType(type: string): NotificationCategory {
   switch (type) {
     case "new-application":
     case "application-submitted":
+    case "payment-submitted":
       return "application";
     case "correction-submitted":
     case "correction-requested":
