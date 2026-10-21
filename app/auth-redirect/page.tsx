@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAppRole } from "@/lib/clerk-roles";
 
@@ -9,7 +9,7 @@ function AuthRedirectContent() {
   const searchParams = useSearchParams();
   const redirectUrl = searchParams.get("redirect_url");
   const { isLoaded, isSignedIn, isAdmin, isVendor } = useAppRole();
-  const [checkingApp, setCheckingApp] = useState(false);
+  const checkingApp = Boolean(isSignedIn && !isAdmin);
 
   useEffect(() => {
     if (!isLoaded) return;
@@ -25,7 +25,6 @@ function AuthRedirectContent() {
 
     // For any non-admin authenticated user, check if they already have a linked application
     let isCancelled = false;
-    setCheckingApp(true);
 
     async function checkApplicationAndRoute() {
       try {

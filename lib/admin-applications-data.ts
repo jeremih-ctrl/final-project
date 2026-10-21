@@ -74,17 +74,14 @@ export interface AdminApplication {
   rejectionReason?: string;
   verifiedBy?: string;
   verifiedAt?: string;
+  isDeleted?: boolean;
+  deletedAt?: string | null;
+  deletedBy?: string | null;
+  deletedReason?: string | null;
 }
 
-export const BARANGAY_OPTIONS = [
-  "All Barangays",
-  "Baan KM 3",
-  "Ampayon",
-  "Libertad",
-  "San Vicente",
-  "Villa Kananga",
-  "Urduja",
-] as const;
+export { BARANGAY_OPTIONS } from "./barangays";
+export type { ButuanBarangay, BarangayOption } from "./barangays";
 
 export const STATUS_OPTIONS = [
   "All",
@@ -94,6 +91,7 @@ export const STATUS_OPTIONS = [
   "Correction Submitted",
   "Approved",
   "Rejected",
+  "Archived / Deleted",
 ] as const;
 
 export const PAYMENT_STATUS_OPTIONS = [

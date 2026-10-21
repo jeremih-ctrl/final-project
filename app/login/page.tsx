@@ -189,6 +189,8 @@ function LoginContent() {
               routing="hash"
               fallbackRedirectUrl={authRedirectTarget}
               forceRedirectUrl={authRedirectTarget}
+              signUpFallbackRedirectUrl={authRedirectTarget}
+              signUpForceRedirectUrl={authRedirectTarget}
               signUpUrl="/sign-up"
               appearance={{
                 variables: {

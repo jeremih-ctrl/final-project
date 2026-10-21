@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, Suspense } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useUser, SignOutButton, SignInButton } from "@clerk/nextjs";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,24 +43,13 @@ import {
   FileCheck2,
   MapPin,
   Check,
-  Eye,
-  EyeOff,
   AlertCircle,
   X,
-  CreditCard,
   Wallet,
-  Building,
   Receipt,
   Info,
-  ExternalLink,
   Clock,
   ShieldAlert,
-  QrCode,
-  FileText,
-  Trash2,
-  RefreshCw,
-  FileUp,
-  Copy,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -75,15 +65,16 @@ import { saveSharedApplication } from "@/lib/vendor-application-state";
 import { BUTUAN_BARANGAYS } from "@/lib/barangays";
 import {
   PAYMENT_METHODS,
-  PaymentMethodOption,
   calculateFeeAssessment,
   formatPhpCurrency,
   generateAssessmentReference,
   getPaymentStatusBadgeConfig,
   BUTUAN_PAYMENT_GATEWAY_CONFIG,
-  LGU_EWALLET_INSTRUCTIONS,
-  LGU_BANK_TRANSFER_INSTRUCTIONS,
 } from "@/lib/payment-fee-schedule";
+
+function getUniqueId(prefix: string): string {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+}
 
 const STEPS = [
   { id: 1, name: "Business", title: "Business Information" },
@@ -168,8 +159,11 @@ const INITIAL_FORM_DATA = {
   paymentReceiptFileSize: 0,
 };
 
-export default function RegisterPage() {
+function RegisterContent() {
   const { user: clerkUser, isLoaded: isClerkLoaded, isSignedIn } = useUser();
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const isNewRegistration = searchParams.get("new") === "true";
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState(INITIAL_FORM_DATA);
   const [draftLoaded, setDraftLoaded] = useState(false);
@@ -195,56 +189,72 @@ export default function RegisterPage() {
       "";
 
     const draftKey = `${DRAFT_STORAGE_KEY_PREFIX}${clerkUser.id}`;
-    let loadedFromDraft = false;
 
-    try {
-      const rawDraft = localStorage.getItem(draftKey);
-      if (rawDraft) {
-        const parsed = JSON.parse(rawDraft);
-        if (parsed?.formData) {
-          setFormData({
-            ...INITIAL_FORM_DATA,
-            ...parsed.formData,
-            // Guaranteed: email is locked to verified Clerk Google email
-            emailAddress: email || parsed.formData.emailAddress || "",
-            // Owner legal name pre-filled if empty
-            ownerName: parsed.formData.ownerName || name || "",
-          });
-          if (
-            typeof parsed.currentStep === "number" &&
-            parsed.currentStep >= 1 &&
-            parsed.currentStep <= 5
-          ) {
-            setCurrentStep(parsed.currentStep);
+    let isCancelled = false;
+    const restoreDraft = async () => {
+      await Promise.resolve();
+      if (isCancelled) return;
+
+      let loadedFromDraft = false;
+      // Do not load old draft if the user explicitly clicked "Send Another Application" / register new business
+      if (!isNewRegistration) {
+        try {
+          const rawDraft = localStorage.getItem(draftKey);
+          if (rawDraft) {
+            const parsed = JSON.parse(rawDraft);
+            if (parsed?.formData) {
+              setFormData({
+                ...INITIAL_FORM_DATA,
+                ...parsed.formData,
+                // Guaranteed: email is locked to verified Clerk Google email
+                emailAddress: email || parsed.formData.emailAddress || "",
+                // Owner legal name pre-filled if empty
+                ownerName: parsed.formData.ownerName || name || "",
+              });
+              if (
+                typeof parsed.currentStep === "number" &&
+                parsed.currentStep >= 1 &&
+                parsed.currentStep <= 5
+              ) {
+                setCurrentStep(parsed.currentStep);
+              }
+              loadedFromDraft = true;
+              setHasSavedDraft(true);
+            }
           }
-          loadedFromDraft = true;
-          setHasSavedDraft(true);
+        } catch (e) {
+          console.error("Failed to restore vendor registration draft:", e);
         }
       }
-    } catch (e) {
-      console.error("Failed to restore vendor registration draft:", e);
-    }
 
-    if (!loadedFromDraft) {
-      setFormData((prev) => ({
-        ...prev,
-        emailAddress: email || prev.emailAddress,
-        ownerName: prev.ownerName || name,
-      }));
-    }
+      if (!loadedFromDraft) {
+        setFormData({
+          ...INITIAL_FORM_DATA,
+          emailAddress: email,
+          ownerName: name,
+        });
+        setCurrentStep(1);
+      }
 
-    setDraftLoaded(true);
+      setDraftLoaded(true);
 
-    // Check if user already has a submitted application on file
-    fetch("/api/vendor/application", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (data?.application) {
-          setExistingApplication(data.application);
-        }
-      })
-      .catch(() => {});
-  }, [isClerkLoaded, isSignedIn, clerkUser]);
+      // Check if user already has a submitted application on file
+      fetch("/api/vendor/application", { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (!isCancelled && data?.application) {
+            setExistingApplication(data.application);
+          }
+        })
+        .catch(() => {});
+    };
+
+    restoreDraft();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [isClerkLoaded, isSignedIn, clerkUser, isNewRegistration]);
 
   // Autosave draft on form changes
   useEffect(() => {
@@ -258,7 +268,9 @@ export default function RegisterPage() {
           updatedAt: new Date().toISOString(),
         })
       );
-      setHasSavedDraft(true);
+      queueMicrotask(() => {
+        setHasSavedDraft(true);
+      });
     } catch (e) {
       console.error("Failed to autosave vendor registration draft:", e);
     }
@@ -285,10 +297,6 @@ export default function RegisterPage() {
   // Validation Errors state
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [fileError, setFileError] = useState<string>("");
-  const [receiptError, setReceiptError] = useState<string>("");
-  const [isDraggingReceipt, setIsDraggingReceipt] = useState(false);
-  const [copiedField, setCopiedField] = useState<string | null>(null);
-  const [receiptPreviewModalOpen, setReceiptPreviewModalOpen] = useState(false);
 
   // Helper to update fields and clear corresponding errors
   const updateField = (field: string, value: string | boolean) => {
@@ -399,81 +407,6 @@ export default function RegisterPage() {
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
-  };
-
-  // Copy helper for payment instructions
-  const copyToClipboard = (text: string, fieldKey: string) => {
-    if (typeof navigator !== "undefined" && navigator.clipboard) {
-      navigator.clipboard.writeText(text);
-      setCopiedField(fieldKey);
-      setTimeout(() => setCopiedField(null), 2500);
-    }
-  };
-
-  // Receipt file processor with validation
-  const processReceiptFile = (file: File) => {
-    const validExtensions = [".png", ".jpg", ".jpeg", ".pdf"];
-    const fileNameLower = file.name.toLowerCase();
-    const isValidExt = validExtensions.some((ext) => fileNameLower.endsWith(ext));
-    const isValidSize = file.size <= 5 * 1024 * 1024; // 5MB
-
-    if (!isValidExt) {
-      setReceiptError("Unsupported file format. Please upload a JPG, JPEG, PNG, or PDF file.");
-      return;
-    }
-
-    if (!isValidSize) {
-      const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
-      setReceiptError(`File size exceeds 5MB limit (${sizeMB}MB). Please upload a smaller receipt image or document.`);
-      return;
-    }
-
-    setReceiptError("");
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      setFormData((prev) => ({
-        ...prev,
-        paymentReceiptDataUrl: result,
-        paymentReceiptFilename: file.name,
-        paymentReceiptFileType: file.type || (fileNameLower.endsWith(".pdf") ? "application/pdf" : "image/jpeg"),
-        paymentReceiptFileSize: file.size,
-        paymentStatus: "pending_verification",
-      }));
-      setErrors((prev) => {
-        const next = { ...prev };
-        delete next.paymentReceipt;
-        delete next.receiptError;
-        return next;
-      });
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handleReceiptDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDraggingReceipt(false);
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      processReceiptFile(e.dataTransfer.files[0]);
-    }
-  };
-
-  const handleReceiptFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      processReceiptFile(e.target.files[0]);
-    }
-  };
-
-  const handleRemoveReceipt = () => {
-    setFormData((prev) => ({
-      ...prev,
-      paymentReceiptDataUrl: "",
-      paymentReceiptFilename: "",
-      paymentReceiptFileType: "",
-      paymentReceiptFileSize: 0,
-      paymentStatus: prev.selectedPaymentMethod === "cto_cashier" ? "unpaid" : "pending_verification",
-    }));
-    setReceiptError("");
   };
 
   // 4. Step 4 Validation (Fee Assessment and Payment)
@@ -594,7 +527,8 @@ export default function RegisterPage() {
         [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ").trim() ||
         formData.ownerName.trim();
 
-      const newAppNumber = existingApplication?.applicationNumber || generateNextApplicationNumber();
+      // Always generate a unique application reference number for new business submissions
+      const newAppNumber = generateNextApplicationNumber();
       const now = new Date().toISOString();
       const payRef = formData.assessmentReference || generateAssessmentReference(newAppNumber);
 
@@ -662,7 +596,7 @@ export default function RegisterPage() {
           : formData.idType || formData.idFileName
           ? [
               {
-                id: `doc-${Date.now()}`,
+                id: getUniqueId("doc"),
                 idType: formData.idType || "Government ID",
                 idNumber: formData.idNumber || undefined,
                 idFileName: formData.idFileName || undefined,
@@ -676,7 +610,7 @@ export default function RegisterPage() {
         payment: paymentRecord,
         statusHistory: [
           {
-            id: `hist-${Date.now()}`,
+            id: getUniqueId("hist"),
             previousStatus: null,
             newStatus: "submitted",
             timestamp: now,
@@ -712,97 +646,25 @@ export default function RegisterPage() {
       }
 
       const saveJson = await saveRes.json().catch(() => ({}));
-      const savedApp: VendorApplication = saveJson.application || newApp;
+      const savedApp: VendorApplication = saveJson.application;
+      if (!savedApp || (!savedApp.applicationNumber && !savedApp.id)) {
+        setSubmitError("Failed to receive verified application record from server. Please try again.");
+        setIsSubmitting(false);
+        return;
+      }
 
+      const actualAppNumber = (savedApp.applicationNumber || savedApp.id).trim();
+      const actualPayRef = savedApp.payment?.transactionReference || finalPayRef;
+
+      // Update in-memory and local client caches with the authoritative server record
       createApplication(savedApp);
 
       if (typeof window !== "undefined") {
-        localStorage.setItem("bvr_current_vendor_app_number", savedApp.applicationNumber);
+        localStorage.setItem("bvr_current_vendor_app_number", actualAppNumber);
       }
 
       try {
-        saveSharedApplication({
-          id: newAppNumber,
-          applicationNumber: newAppNumber,
-          vendorId: "",
-          vendor: {
-            id: "",
-            name: formData.ownerName.trim(),
-            businessName: formData.businessName.trim(),
-            email: formData.emailAddress.trim(),
-            phone: formData.contactNumber.trim(),
-          },
-          business: {
-            name: formData.businessName.trim(),
-            businessName: formData.businessName.trim(),
-            category: categoryLabel,
-            address: `${formData.houseNo.trim()} ${formData.street.trim()}, ${formData.barangay}, Butuan City`,
-            barangay: formData.barangay,
-            description: formData.businessDescription.trim() || undefined,
-            houseNumber: formData.houseNo.trim(),
-            street: formData.street.trim(),
-            city: "Butuan City",
-            province: "Agusan del Norte",
-            region: "Caraga",
-            country: "Philippines",
-          },
-          status: "submitted",
-          adminStatus: "Submitted",
-          verificationStatus: "Pending",
-          isVerified: false,
-          currentStage: 1,
-          submittedAt: now,
-          submittedDate: new Date().toLocaleDateString("en-US", {
-            month: "long",
-            day: "numeric",
-            year: "numeric",
-          }),
-          updatedAt: now,
-          lastUpdatedText: "Submitted just now",
-          documents: newApp.documents.map((d) => ({
-            id: d.id || `doc-${Date.now()}`,
-            filename: d.filename || d.idFileName || "government-id.pdf",
-            idType: d.idType || "Philippine National ID",
-            uploadedAt: d.uploadedAt || now,
-            status: "Submitted",
-            submitted: true,
-          })),
-          adminRemarks: "",
-          administratorRemarks: "",
-          correctionItems: [],
-          correctionFields: [],
-          correctionDate: null,
-          activity: [
-            {
-              id: `act-${Date.now()}`,
-              title: "Application Submitted",
-              description: isGcash
-                ? `Vendor registration submitted with GCash online payment queued (Tracking Ref: ${finalPayRef}). Status: Pending Verification.`
-                : `Vendor registration submitted. Settle payment at City Treasurer's Office (CTO) Cashier. Status: Awaiting Cashier Payment.`,
-              date: "Today • Just now",
-              dotColor: isGcash ? "amber" : "blue",
-              type: "submission",
-            },
-          ],
-          businessName: formData.businessName.trim(),
-          ownerName: formData.ownerName.trim(),
-          contactNumber: formData.contactNumber.trim(),
-          email: formData.emailAddress.trim(),
-          barangay: formData.barangay,
-          houseNumber: formData.houseNo.trim(),
-          street: formData.street.trim(),
-          city: "Butuan City",
-          province: "Agusan del Norte",
-          region: "Caraga",
-          country: "Philippines",
-          payment: paymentRecord,
-          paymentStatus: initialPaymentStatus,
-          assessedAmount: feeAssessment.totalAmount,
-          amountPaid: paidVal,
-          paymentMethod: selectedMethodObj.name,
-          transactionReference: finalPayRef,
-          paymentDate: null,
-        });
+        saveSharedApplication(savedApp);
       } catch (syncErr) {
         console.error("Failed to sync shared application state:", syncErr);
       }
@@ -813,27 +675,27 @@ export default function RegisterPage() {
           type: "payment-submitted",
           title: "GCash Payment Ready for Verification",
           message: `Vendor ${formData.ownerName.trim()} (${formData.businessName.trim()}) submitted application with GCash online payment (${feeAssessment.formattedTotal}). Ready for verification.`,
-          fullMessage: `Vendor ${formData.ownerName.trim()} for application ${newAppNumber} (${formData.businessName.trim()}) registered with GCash online payment (${feeAssessment.formattedTotal}, Tracking Ref: ${finalPayRef}). Administrative verification against municipal accounts is required before official receipt issuance and application approval.`,
-          applicationNumber: newAppNumber,
+          fullMessage: `Vendor ${formData.ownerName.trim()} for application ${actualAppNumber} (${formData.businessName.trim()}) registered with GCash online payment (${feeAssessment.formattedTotal}, Tracking Ref: ${actualPayRef}). Administrative verification against municipal accounts is required before official receipt issuance and application approval.`,
+          applicationNumber: actualAppNumber,
           vendorName: formData.businessName.trim(),
           status: "Submitted",
           actionLabel: "Review Application",
-          actionUrl: `/admin/applications/${newAppNumber}`,
-          href: `/admin/applications/${newAppNumber}`,
+          actionUrl: `/admin/applications/${actualAppNumber}`,
+          href: `/admin/applications/${actualAppNumber}`,
           priority: "high",
         });
       } else {
         addAdminNotification({
           type: "new-application",
           title: "New Registration — CTO Cashier Selected",
-          message: `Vendor ${formData.businessName.trim()} (${newAppNumber}) selected CTO Cashier in-person payment.`,
-          fullMessage: `A new vendor registration application has been submitted by ${formData.ownerName.trim()} for ${formData.businessName.trim()} (${newAppNumber}). Selected Payment Method: City Treasurer's Office (CTO) Cashier (Pay In Person). Status: Awaiting Cashier Payment. Official receipt must be recorded upon cashier settlement.`,
-          applicationNumber: newAppNumber,
+          message: `Vendor ${formData.businessName.trim()} (${actualAppNumber}) selected CTO Cashier in-person payment.`,
+          fullMessage: `A new vendor registration application has been submitted by ${formData.ownerName.trim()} for ${formData.businessName.trim()} (${actualAppNumber}). Selected Payment Method: City Treasurer's Office (CTO) Cashier (Pay In Person). Status: Awaiting Cashier Payment. Official receipt must be recorded upon cashier settlement.`,
+          applicationNumber: actualAppNumber,
           vendorName: formData.businessName.trim(),
           status: "Submitted",
           actionLabel: "Review Application",
-          actionUrl: `/admin/applications/${newAppNumber}`,
-          href: `/admin/applications/${newAppNumber}`,
+          actionUrl: `/admin/applications/${actualAppNumber}`,
+          href: `/admin/applications/${actualAppNumber}`,
           priority: "high",
         });
       }
@@ -843,35 +705,34 @@ export default function RegisterPage() {
         addVendorNotification({
           type: "application-submitted",
           title: "GCash Payment Queued — Pending Verification",
-          message: `Your payment for application ${newAppNumber} has been queued and is pending administrative verification.`,
-          fullMessage: `Your registration for ${formData.businessName.trim()} has been submitted with GCash online payment (Ref: ${finalPayRef}, Amount: ${feeAssessment.formattedTotal}). Status: Pending Verification. An authorized administrator will verify your payment against official municipal records, after which your official receipt will appear in your Documents section.`,
-          applicationNumber: newAppNumber,
+          message: `Your payment for application ${actualAppNumber} has been queued and is pending administrative verification.`,
+          fullMessage: `Your registration for ${formData.businessName.trim()} has been submitted with GCash online payment (Ref: ${actualPayRef}, Amount: ${feeAssessment.formattedTotal}). Status: Pending Verification. An authorized administrator will verify your payment against official municipal records, after which your official receipt will appear in your Documents section.`,
+          applicationNumber: actualAppNumber,
           vendorName: formData.businessName.trim(),
           status: "Submitted",
           actionLabel: "View Application",
-          actionUrl: `/application-status?appNumber=${newAppNumber}`,
-          href: `/application-status?appNumber=${newAppNumber}`,
+          actionUrl: `/application-status?appNumber=${actualAppNumber}`,
+          href: `/application-status?appNumber=${actualAppNumber}`,
           priority: "normal",
         });
       } else {
         addVendorNotification({
           type: "application-submitted",
           title: "Application Received — Awaiting CTO Cashier Payment",
-          message: `Your registration ${newAppNumber} has been received. Please pay ${feeAssessment.formattedTotal} at the City Treasurer's Office (CTO) Cashier.`,
-          fullMessage: `Your registration for ${formData.businessName.trim()} has been received with Application Number ${newAppNumber}. Please settle your assessed fee of ${feeAssessment.formattedTotal} at the City Treasurer's Office (CTO) Cashier counter at City Hall BOSS Center. Your official receipt will be available in your Documents section once recorded.`,
-          applicationNumber: newAppNumber,
+          message: `Your registration ${actualAppNumber} has been received. Please pay ${feeAssessment.formattedTotal} at the City Treasurer's Office (CTO) Cashier.`,
+          fullMessage: `Your registration for ${formData.businessName.trim()} has been received with Application Number ${actualAppNumber}. Please settle your assessed fee of ${feeAssessment.formattedTotal} at the City Treasurer's Office (CTO) Cashier counter at City Hall BOSS Center. Your official receipt will be available in your Documents section once recorded.`,
+          applicationNumber: actualAppNumber,
           vendorName: formData.businessName.trim(),
           status: "Submitted",
           actionLabel: "View Application",
-          actionUrl: `/application-status?appNumber=${newAppNumber}`,
-          href: `/application-status?appNumber=${newAppNumber}`,
+          actionUrl: `/application-status?appNumber=${actualAppNumber}`,
+          href: `/application-status?appNumber=${actualAppNumber}`,
           priority: "normal",
         });
       }
 
-      setCreatedAppNumber(newAppNumber);
-      setCreatedPayReference(finalPayRef);
-      setSuccessModalOpen(true);
+      setCreatedAppNumber(actualAppNumber);
+      setCreatedPayReference(actualPayRef);
 
       // If user is authenticated with Clerk, assign trusted vendor role
       if (clerkUser) {
@@ -883,6 +744,9 @@ export default function RegisterPage() {
           console.error("Failed to assign vendor role in Clerk:", err);
         });
       }
+
+      // Immediately and directly navigate the vendor to their newly submitted application details
+      router.push(`/dashboard/my-application?appNumber=${encodeURIComponent(actualAppNumber)}`);
     } catch (err) {
       console.error("Failed to submit registration application:", err);
       setSubmitError("An error occurred during submission. Please try again.");
@@ -1054,22 +918,37 @@ export default function RegisterPage() {
                     <CheckCircle2 className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
                     <div className="min-w-0">
                       <h4 className="text-xs font-bold text-blue-950">
-                        Active Application On File: {existingApplication.applicationNumber}
+                        {isNewRegistration
+                          ? "Registering an Additional Business"
+                          : `Registered Business On File: ${existingApplication.applicationNumber}`}
                       </h4>
-                      <p className="text-xs text-blue-900/90 mt-0.5 truncate">
-                        Your Google account is already linked to an application for <strong>{existingApplication.business?.businessName || "your enterprise"}</strong>.
+                      <p className="text-xs text-blue-900/90 mt-0.5">
+                        Your account is linked to{" "}
+                        <strong>{existingApplication.business?.businessName || "an enterprise"}</strong>.
+                        Submitting this registration will create a distinct business profile with its own unique application number.
                       </p>
                     </div>
                   </div>
-                  <Link
-                    href="/dashboard"
-                    className={cn(
-                      buttonVariants({ variant: "default", size: "sm" }),
-                      "bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-xl shrink-0 cursor-pointer"
-                    )}
-                  >
-                    Go to Dashboard
-                  </Link>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Link
+                      href="/dashboard/my-application"
+                      className={cn(
+                        buttonVariants({ variant: "outline", size: "sm" }),
+                        "text-blue-700 border-blue-300 hover:bg-blue-100 font-semibold text-xs rounded-xl cursor-pointer"
+                      )}
+                    >
+                      View Applications
+                    </Link>
+                    <Link
+                      href="/dashboard"
+                      className={cn(
+                        buttonVariants({ variant: "default", size: "sm" }),
+                        "bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-xl shrink-0 cursor-pointer"
+                      )}
+                    >
+                      Go to Dashboard
+                    </Link>
+                  </div>
                 </div>
               )}
 
@@ -1288,21 +1167,60 @@ export default function RegisterPage() {
                       <SelectTrigger
                         id="businessCategory"
                         className={cn(
-                          "h-11 bg-slate-50/50 border-slate-300 focus:bg-white text-base sm:text-sm",
+                          "w-full h-11 px-3.5 bg-slate-50/50 border-slate-300 focus:bg-white text-base sm:text-sm text-slate-900 transition-all shadow-none",
                           errors.businessCategory && "border-rose-400 bg-rose-50/20"
                         )}
                       >
-                        <SelectValue placeholder="Select business line" />
+                        <SelectValue placeholder="Select business line">
+                          {(val) => {
+                            const selected = BUSINESS_CATEGORIES.find((c) => c.id === val);
+                            return selected ? (
+                              <span className="font-medium text-slate-900 truncate">
+                                {selected.name}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400">Select business line</span>
+                            );
+                          }}
+                        </SelectValue>
                       </SelectTrigger>
-                      <SelectContent>
-                        {BUSINESS_CATEGORIES.map((cat) => (
-                          <SelectItem key={cat.id} value={cat.id}>
-                            <div className="py-0.5">
-                              <span className="font-semibold text-slate-900 block">{cat.name}</span>
-                              <span className="text-xs text-slate-500 block">{cat.desc}</span>
-                            </div>
-                          </SelectItem>
-                        ))}
+                      <SelectContent
+                        side="bottom"
+                        sideOffset={6}
+                        align="start"
+                        alignItemWithTrigger={false}
+                        className="w-[var(--anchor-width)] min-w-full sm:min-w-[520px] max-w-[calc(100vw-2rem)] max-h-96 p-2 bg-white border border-slate-200 shadow-xl rounded-xl z-50 overflow-y-auto"
+                      >
+                        {BUSINESS_CATEGORIES.map((cat) => {
+                          const isSelected = formData.businessCategory === cat.id;
+                          return (
+                            <SelectItem
+                              key={cat.id}
+                              value={cat.id}
+                              className={cn(
+                                "cursor-pointer rounded-lg px-3.5 py-3 my-1 transition-colors outline-none",
+                                "hover:bg-blue-50/80 focus:bg-blue-50 data-[highlighted]:bg-blue-50/80",
+                                isSelected
+                                  ? "bg-blue-50/90 text-blue-950 font-medium border border-blue-200/80"
+                                  : "text-slate-800 hover:text-blue-900 border border-transparent"
+                              )}
+                            >
+                              <div className="flex flex-col text-left w-full pr-5">
+                                <span
+                                  className={cn(
+                                    "text-sm leading-snug break-words",
+                                    isSelected ? "font-bold text-blue-950" : "font-semibold text-slate-900"
+                                  )}
+                                >
+                                  {cat.name}
+                                </span>
+                                <p className="text-xs text-slate-500 mt-1 leading-relaxed break-words whitespace-normal font-normal">
+                                  {cat.desc}
+                                </p>
+                              </div>
+                            </SelectItem>
+                          );
+                        })}
                       </SelectContent>
                     </Select>
                     {errors.businessCategory && (
@@ -2693,13 +2611,22 @@ export default function RegisterPage() {
 
           <DialogFooter className="flex flex-col sm:flex-row gap-2 pt-2">
             <Link
-              href={`/register/success?appNumber=${createdAppNumber}`}
+              href={`/dashboard/my-application?appNumber=${createdAppNumber}`}
               className={cn(
                 buttonVariants({ variant: "default" }),
+                "w-full sm:flex-1 justify-center font-semibold cursor-pointer bg-blue-600 hover:bg-blue-700 text-white"
+              )}
+            >
+              View Application in Dashboard
+            </Link>
+            <Link
+              href={`/register/success?appNumber=${createdAppNumber}`}
+              className={cn(
+                buttonVariants({ variant: "outline" }),
                 "w-full sm:flex-1 justify-center font-semibold cursor-pointer"
               )}
             >
-              View Official Receipt & Slip
+              View Assessment Slip
             </Link>
             <Button
               type="button"
@@ -2713,5 +2640,22 @@ export default function RegisterPage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+          <div className="flex flex-col items-center gap-3 text-slate-500">
+            <div className="w-8 h-8 border-3 border-blue-600 border-t-transparent rounded-full animate-spin" />
+            <p className="text-xs font-medium">Loading vendor registration form...</p>
+          </div>
+        </div>
+      }
+    >
+      <RegisterContent />
+    </Suspense>
   );
 }

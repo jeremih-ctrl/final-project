@@ -21,48 +21,17 @@ export const DELETED_APPLICATIONS_STORAGE_KEY = "bvr_deleted_applications";
 export const DELETED_APPLICATIONS_UPDATED_EVENT = "bvr_deleted_applications_updated";
 
 // ─── Initial Seed Applications & Demo Sanitization ────────────────────────────
+import {
+  MOCK_APPLICATION_IDS,
+  MOCK_BUSINESS_NAMES,
+  isDemoOrMockApplication,
+} from "./mock-filter";
 
-export const MOCK_APPLICATION_IDS = new Set([
-  "bvr-2026-001248",
-  "bvr-2026-001247",
-  "bvr-2026-001246",
-  "bvr-2026-001245",
-  "bvr-2026-001244",
-  "bvr-2026-001243",
-  "bvr-2026-001242",
-  "bvr-2026-001241",
-]);
-
-export const MOCK_BUSINESS_NAMES = new Set([
-  "montilla street produce & snacks",
-  "urduja dry goods & general merchandise",
-  "barangay dagohoy carinderia & catering",
-  "agusan river fresh fish",
-  "golden tara refreshments",
-  "butuan balut & penoy express",
-  "kadayawan fruit stand",
-  "maningning tailoring & repair",
-  "maria's sari-sari store",
-]);
-
-/**
- * Identify demo, mock, placeholder, or invalid/incomplete applications.
- */
-export function isDemoOrMockApplication(
-  app: Partial<VendorApplication> | null | undefined
-): boolean {
-  if (!app) return true;
-  const id = (app.id || app.applicationNumber || "").trim().toLowerCase();
-  if (!id || MOCK_APPLICATION_IDS.has(id)) return true;
-
-  const bName = (app.business?.businessName || "").trim().toLowerCase();
-  if (!bName || MOCK_BUSINESS_NAMES.has(bName)) return true;
-
-  const oName = (app.owner?.ownerName || "").trim();
-  if (!oName) return true;
-
-  return false;
-}
+export {
+  MOCK_APPLICATION_IDS,
+  MOCK_BUSINESS_NAMES,
+  isDemoOrMockApplication,
+};
 
 /**
  * Returns empty array so the applications store starts empty and only genuine
@@ -236,7 +205,11 @@ export function getApplication(id: string): VendorApplication | null {
       app.applicationNumber.toLowerCase() === normalizedQuery
   );
 
-  return found ?? null;
+  if (!found || isDemoOrMockApplication(found)) {
+    return null;
+  }
+
+  return found;
 }
 
 // ─── 3. createApplication ─────────────────────────────────────────────────────
@@ -246,6 +219,10 @@ export function getApplication(id: string): VendorApplication | null {
  * Guaranteed never to duplicate or throw an unhandled error.
  */
 export function createApplication(application: VendorApplication): VendorApplication {
+  if (isDemoOrMockApplication(application)) {
+    return application;
+  }
+
   if (!isBrowser()) {
     return application;
   }
@@ -256,9 +233,20 @@ export function createApplication(application: VendorApplication): VendorApplica
     (app) => app.id.toLowerCase() === normalizedId
   );
 
+  const existing = existingIndex >= 0 ? applications[existingIndex] : null;
+  const isDeletedAlready =
+    Boolean(application.isDeleted) ||
+    Boolean(existing?.isDeleted) ||
+    isApplicationDeleted(application.id) ||
+    isApplicationDeleted(application.applicationNumber);
+
   const now = new Date().toISOString();
   const newApp: VendorApplication = {
     ...application,
+    isDeleted: isDeletedAlready,
+    deletedAt: isDeletedAlready ? (application.deletedAt || existing?.deletedAt || now) : null,
+    deletedBy: isDeletedAlready ? (application.deletedBy || existing?.deletedBy || "Administrator") : "",
+    deletedReason: isDeletedAlready ? (application.deletedReason || existing?.deletedReason || "") : "",
     status: application.status || "submitted",
     verificationStatus: application.verificationStatus || "Pending",
     isVerified: Boolean(application.isVerified),
@@ -284,9 +272,6 @@ export function createApplication(application: VendorApplication): VendorApplica
       },
     ],
   };
-
-  // Crucial: remove from deleted applications list if present
-  undeleteAdminApplicationRecord(application.id);
 
   if (existingIndex >= 0) {
     applications[existingIndex] = newApp;
@@ -334,6 +319,10 @@ export function updateApplication(
   }
 
   const existing = applications[index];
+  if (isDemoOrMockApplication(existing)) {
+    return null;
+  }
+
   const now = new Date().toISOString();
 
   // Maintain audit trail if status transitions
@@ -395,9 +384,10 @@ export function updateApplication(
 // ─── 5. deleteApplication ─────────────────────────────────────────────────────
 
 /**
- * Remove an application by ID from the shared store.
+ * Soft-delete / archive an application by ID in the shared store.
+ * Preserves the application record, historical documents, payments, and marks it as isDeleted: true.
  */
-export function deleteApplication(id: string): boolean {
+export function deleteApplication(id: string, reason = "Archived by Administrator"): boolean {
   if (!isBrowser() || !id) {
     return false;
   }
@@ -405,24 +395,105 @@ export function deleteApplication(id: string): boolean {
   const applications = getApplications();
   const normalizedQuery = id.trim().toLowerCase();
 
-  const initialLength = applications.length;
-  const filtered = applications.filter(
+  const index = applications.findIndex(
     (app) =>
-      app.id.toLowerCase() !== normalizedQuery &&
-      app.applicationNumber.toLowerCase() !== normalizedQuery
+      app.id.toLowerCase() === normalizedQuery ||
+      app.applicationNumber.toLowerCase() === normalizedQuery
   );
 
-  if (filtered.length === initialLength) {
+  if (index === -1) {
     return false;
   }
 
-  saveApplicationsToStorage(filtered);
+  const existing = applications[index];
+  const now = new Date().toISOString();
 
-  // Synchronize deletion to server persistent database
+  const updated: VendorApplication = {
+    ...existing,
+    isDeleted: true,
+    deletedAt: now,
+    deletedBy: "Administrator",
+    deletedReason: reason,
+    updatedAt: now,
+    statusHistory: [
+      ...(existing.statusHistory || []),
+      {
+        id: `hist-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        previousStatus: existing.status,
+        newStatus: existing.status,
+        timestamp: now,
+        action: "Application Deleted by Administrator",
+        actionBy: "Administrator",
+        remark: reason,
+      },
+    ],
+  };
+
+  applications[index] = updated;
+  saveApplicationsToStorage(applications);
+
+  // Synchronize soft deletion to server persistent database
   if (typeof window !== "undefined" && typeof fetch === "function") {
-    fetch(`/api/admin/applications/${encodeURIComponent(id)}`, {
+    fetch(`/api/admin/applications/${encodeURIComponent(existing.applicationNumber || existing.id)}`, {
       method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason }),
     }).catch(() => {});
+  }
+
+  return true;
+}
+
+// ─── 5.1 permanentlyDeleteApplication ──────────────────────────────────────────
+
+/**
+ * Permanently removes an application record from the client-side store and deleted set.
+ * Used when an administrator confirms permanent deletion of an archived/rejected record.
+ * Only targets the specific application by ID or application number.
+ */
+export function permanentlyDeleteApplication(id: string): boolean {
+  if (!id || !isBrowser()) {
+    return false;
+  }
+
+  const normalizedQuery = id.trim().toLowerCase();
+  const applications = getApplications();
+
+  const index = applications.findIndex(
+    (app) =>
+      app.id?.toLowerCase() === normalizedQuery ||
+      app.applicationNumber?.toLowerCase() === normalizedQuery
+  );
+
+  let targetAppNumber = "";
+  let targetId = "";
+
+  if (index !== -1) {
+    targetAppNumber = (applications[index].applicationNumber || "").toLowerCase();
+    targetId = (applications[index].id || "").toLowerCase();
+    applications.splice(index, 1);
+    saveApplicationsToStorage(applications);
+  }
+
+  // Remove from deleted applications list
+  const currentDeleted = getDeletedStoreSnapshot();
+  const filteredDeleted = currentDeleted.filter(
+    (item) =>
+      item !== normalizedQuery &&
+      (!targetAppNumber || item !== targetAppNumber) &&
+      (!targetId || item !== targetId)
+  );
+
+  if (filteredDeleted.length !== currentDeleted.length) {
+    const serialized = JSON.stringify(filteredDeleted);
+    localStorage.setItem(DELETED_APPLICATIONS_STORAGE_KEY, serialized);
+    lastDeletedRaw = serialized;
+    cachedDeletedSnapshot = filteredDeleted;
+    if (typeof window.dispatchEvent === "function") {
+      window.dispatchEvent(
+        new CustomEvent(DELETED_APPLICATIONS_UPDATED_EVENT, { detail: filteredDeleted })
+      );
+    }
   }
 
   return true;
@@ -458,6 +529,7 @@ export function generateNextApplicationNumber(): string {
   const allApps = getApplications();
   let maxSeq = 0;
   for (const app of allApps) {
+    if (isDemoOrMockApplication(app)) continue;
     const num = app.applicationNumber || app.id;
     const match = num.match(/BVR-\d{4}-(\d+)/i);
     if (match) {
@@ -549,15 +621,18 @@ export function getDeletedApplicationIds(): string[] {
  */
 export function isApplicationDeleted(id: string): boolean {
   if (!id || !isBrowser()) return false;
+  const normalized = id.trim().toLowerCase();
   const deleted = getDeletedStoreSnapshot();
-  return deleted.includes(id.trim().toLowerCase());
+  if (deleted.includes(normalized)) return true;
+  const app = getApplication(id);
+  return Boolean(app?.isDeleted);
 }
 
 /**
- * Explicitly mark an application as deleted.
+ * Explicitly mark an application as deleted / archived.
  * Called ONLY when an Administrator confirms a Delete action in the UI.
  */
-export function deleteAdminApplicationRecord(id: string): boolean {
+export function deleteAdminApplicationRecord(id: string, reason = "Archived by Administrator"): boolean {
   if (!id || !isBrowser()) return false;
   const normalized = id.trim().toLowerCase();
   const current = getDeletedStoreSnapshot();
@@ -568,8 +643,8 @@ export function deleteAdminApplicationRecord(id: string): boolean {
     lastDeletedRaw = serialized;
     cachedDeletedSnapshot = updated;
 
-    // Also remove from active stored applications
-    deleteApplication(id);
+    // Mark as deleted in stored applications while preserving the historical record
+    deleteApplication(id, reason);
 
     if (typeof window.dispatchEvent === "function") {
       window.dispatchEvent(
@@ -578,6 +653,8 @@ export function deleteAdminApplicationRecord(id: string): boolean {
     }
     return true;
   }
+
+  deleteApplication(id, reason);
   return false;
 }
 

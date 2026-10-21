@@ -13,8 +13,6 @@ import {
   AlertTriangle,
   FileCheck2,
   FileText,
-  RotateCcw,
-  Sparkles,
   Eye,
   MailCheck,
 } from "lucide-react";

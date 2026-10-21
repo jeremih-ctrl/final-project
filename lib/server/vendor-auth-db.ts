@@ -13,33 +13,54 @@ export interface StoredVendorAccount {
 const DATA_DIR = path.join(process.cwd(), "data");
 const ACCOUNTS_FILE = path.join(DATA_DIR, "vendor-accounts.json");
 
+let memoryAccountsCache: StoredVendorAccount[] | null = null;
+
 function ensureDirectoryExists() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+  } catch {
+    // Serverless read-only filesystem handled gracefully
   }
 }
 
 export function getAllAccounts(): StoredVendorAccount[] {
+  if (memoryAccountsCache !== null) {
+    return memoryAccountsCache;
+  }
   ensureDirectoryExists();
   if (!fs.existsSync(ACCOUNTS_FILE)) {
+    memoryAccountsCache = [];
     return [];
   }
   try {
     const raw = fs.readFileSync(ACCOUNTS_FILE, "utf-8");
-    if (!raw.trim()) return [];
+    if (!raw.trim()) {
+      memoryAccountsCache = [];
+      return [];
+    }
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    const result = Array.isArray(parsed) ? parsed : [];
+    memoryAccountsCache = result;
+    return result;
   } catch (err) {
-    console.error("Failed to read vendor accounts file:", err);
+    console.warn("Failed to read vendor accounts file:", err);
+    memoryAccountsCache = [];
     return [];
   }
 }
 
 function saveAccounts(accounts: StoredVendorAccount[]): void {
-  ensureDirectoryExists();
-  const tmpFile = `${ACCOUNTS_FILE}.tmp.${Date.now()}`;
-  fs.writeFileSync(tmpFile, JSON.stringify(accounts, null, 2), "utf-8");
-  fs.renameSync(tmpFile, ACCOUNTS_FILE);
+  memoryAccountsCache = [...accounts];
+  try {
+    ensureDirectoryExists();
+    const tmpFile = `${ACCOUNTS_FILE}.tmp.${Date.now()}`;
+    fs.writeFileSync(tmpFile, JSON.stringify(accounts, null, 2), "utf-8");
+    fs.renameSync(tmpFile, ACCOUNTS_FILE);
+  } catch {
+    // Ignored in read-only serverless environment
+  }
 }
 
 export function validatePasswordRequirements(password: string): { valid: boolean; error?: string } {

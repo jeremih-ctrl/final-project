@@ -155,168 +155,75 @@ export type VendorApplicationState = SharedApplication;
 
 // ─── Canonical Initial Application Data ───────────────────────────────────────
 
-export const INITIAL_APPLICATION: SharedApplication = {
-  id: "BVR-2026-001248",
-  applicationNumber: "BVR-2026-001248",
-  vendorId: "BUT-V-001248",
+export const EMPTY_APPLICATION: SharedApplication = {
+  id: "",
+  applicationNumber: "",
+  vendorId: "",
 
   vendor: {
-    id: "BUT-V-001248",
-    name: "Maria Santos",
-    businessName: "Montilla Street Produce & Snacks",
-    email: "maria.santos@email.com",
-    phone: "09181234567",
+    id: "",
+    name: "",
+    businessName: "",
+    email: "",
+    phone: "",
   },
 
   business: {
-    name: "Montilla Street Produce & Snacks",
-    businessName: "Montilla Street Produce & Snacks",
-    category: "Produce & Snacks / Market Stall",
-    address: "Montilla Boulevard, Barangay Urduja, Butuan City",
-    barangay: "Barangay Urduja",
-    description: "Produce, local snacks, and fresh goods in Butuan City.",
-    houseNumber: "123",
-    street: "Montilla Boulevard",
+    name: "",
+    businessName: "",
+    category: "",
+    address: "",
+    barangay: "",
+    description: "",
+    houseNumber: "",
+    street: "",
     city: "Butuan City",
     province: "Agusan del Norte",
     region: "Caraga",
     country: "Philippines",
   },
 
-  status: "under-review",
-  adminStatus: "Under Review",
+  status: "submitted",
+  adminStatus: "Submitted",
   verificationStatus: "Pending",
   isVerified: false,
-  currentStage: 2,
+  currentStage: 1,
 
-  submittedAt: "October 6, 2026 • 9:30 AM",
-  submittedDate: "October 6, 2026",
-  updatedAt: "October 6, 2026 • 9:30 AM",
-  lastUpdatedText: "Submitted Oct 6, 2026 • 9:30 AM",
+  submittedAt: "",
+  submittedDate: "",
+  updatedAt: "",
+  lastUpdatedText: "",
 
-  documents: [
-    {
-      id: "DOC-2026-BVR-001248",
-      filename: "government-id.pdf",
-      idType: "Philippine National ID (PhilSys)",
-      uploadedAt: "October 6, 2026",
-      status: "Replacement Requested",
-      submitted: true,
-      fileSize: "2.4 MB",
-    },
-  ],
+  documents: [],
+  governmentIdDoc: undefined,
+  governmentIdStatus: undefined,
 
-  governmentIdDoc: {
-    id: "DOC-2026-BVR-001248",
-    filename: "government-id.pdf",
-    idType: "Philippine National ID (PhilSys)",
-    uploadedAt: "October 6, 2026",
-    status: "Replacement Requested",
-    submitted: true,
-    fileSize: "2.4 MB",
-  },
-  governmentIdStatus: "Submitted",
+  adminRemarks: "",
+  administratorRemarks: "",
 
-  adminRemarks:
-    "Please provide a clearer business address and replace the submitted government ID image with a readable copy.",
-  administratorRemarks:
-    "Please provide a clearer business address and replace the submitted government ID image with a readable copy.",
+  correctionDate: null,
+  correctionItems: [],
+  correctionFields: [],
 
-  correctionDate: "October 6, 2026 • 2:45 PM",
-  correctionItems: [
-    {
-      field: "street",
-      label: "Street / Business Address",
-      reason: "Please provide the complete street address (e.g., include Ave., St., Road).",
-    },
-    {
-      field: "governmentId",
-      label: "Government ID",
-      reason: "Please upload a clearer copy of your government ID (the submitted image was unreadable).",
-    },
-  ],
-  correctionFields: [
-    {
-      field: "street",
-      label: "Street / Business Address",
-      reason: "Please provide the complete street address (e.g., include Ave., St., Road).",
-    },
-    {
-      field: "governmentId",
-      label: "Government ID",
-      reason: "Please upload a clearer copy of your government ID (the submitted image was unreadable).",
-    },
-  ],
-
-  activity: [
-    {
-      id: "act-3",
-      title: "Correction Requested",
-      description:
-        "Administrator requested corrections to business address and government ID.",
-      date: "Oct 6, 2026 • 2:45 PM",
-      dotColor: "orange",
-      type: "correction",
-    },
-    {
-      id: "act-2",
-      title: "Application Submitted",
-      description: "Your vendor registration was successfully submitted.",
-      date: "Oct 6, 2026 • 9:30 AM",
-      dotColor: "emerald",
-      type: "submission",
-    },
-    {
-      id: "act-1",
-      title: "Application Created",
-      description: "Initial application draft created.",
-      date: "Oct 6, 2026 • 9:15 AM",
-      dotColor: "slate",
-      type: "submission",
-    },
-  ],
+  activity: [],
 
   // Flat field aliases
-  businessName: "Montilla Street Produce & Snacks",
-  ownerName: "Maria Santos",
-  contactNumber: "09181234567",
-  email: "maria.santos@email.com",
-  barangay: "Barangay Urduja",
-  houseNumber: "123",
-  street: "Montilla Boulevard",
+  businessName: "",
+  ownerName: "",
+  contactNumber: "",
+  email: "",
+  barangay: "",
+  houseNumber: "",
+  street: "",
   city: "Butuan City",
   province: "Agusan del Norte",
   region: "Caraga",
   country: "Philippines",
 
-  payment: {
-    status: "pending",
-    assessedAmount: 1450,
-    amountPaid: 0,
-    currency: "PHP",
-    paymentMethod: "Maya",
-    paymentMethodCategory: "e_wallet",
-    transactionReference: "PAY-BVR-2026-001248",
-    paymentDate: null,
-    assessmentStatus: "assessed",
-    assessmentNotes: "Itemized regulatory fees assessed under Butuan City Tax Ordinance No. 132.",
-    feeBreakdown: [
-      { id: "mayors-permit", name: "Mayor's Permit / Local Business Registration", description: "CBPLD municipal authorization", amount: 500, isRegulatory: true },
-      { id: "barangay-clearance", name: "Barangay Clearance Regulatory Fee", description: "Consolidated barangay clearance via City BOSS", amount: 100, isRegulatory: true },
-      { id: "sanitary-inspection", name: "Sanitary Inspection & Health Clearance Fee", description: "City Health Office annual inspection", amount: 250, isRegulatory: true },
-      { id: "zoning-clearance", name: "Zoning & Locational Clearance Fee", description: "CPDO locational clearance", amount: 200, isRegulatory: true },
-      { id: "fire-safety-inspection", name: "Annual Fire Safety Inspection Fee", description: "Bureau of Fire Protection regulatory fee", amount: 200, isRegulatory: true },
-      { id: "solid-waste-enro", name: "City Garbage & Solid Waste Environmental Fee", description: "City ENRO solid waste compliance fee", amount: 200, isRegulatory: true },
-    ],
-    gatewayProvider: "Maya (Butuan City E-TRACS Partner)",
-  },
-  paymentStatus: "pending",
-  assessedAmount: 1450,
-  amountPaid: 0,
-  paymentMethod: "Maya",
-  transactionReference: "PAY-BVR-2026-001248",
-  paymentDate: null,
+  payment: undefined,
 };
+
+export const INITIAL_APPLICATION: SharedApplication = EMPTY_APPLICATION;
 
 /** Alias for existing code expecting MOCK_VENDOR_APPLICATION */
 export const MOCK_VENDOR_APPLICATION: SharedApplication = INITIAL_APPLICATION;
@@ -584,17 +491,6 @@ export function getSharedApplication(): SharedApplication {
     }
 
     if (!parsed && !statusState) {
-      // First-time initialize
-      localStorage.setItem(SHARED_APP_STORAGE_KEY, JSON.stringify(INITIAL_APPLICATION));
-      localStorage.setItem(
-        SHARED_APP_STATUS_KEY,
-        JSON.stringify({
-          status: INITIAL_APPLICATION.adminStatus,
-          verificationStatus: INITIAL_APPLICATION.verificationStatus,
-          isVerified: INITIAL_APPLICATION.isVerified,
-          currentStage: INITIAL_APPLICATION.currentStage,
-        })
-      );
       return INITIAL_APPLICATION;
     }
 
@@ -653,6 +549,7 @@ export function getSharedApplication(): SharedApplication {
 }
 
 /** Normalize either a raw VendorApplication or Partial SharedApplication into a valid SharedApplication */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function normalizeToSharedApplication(input: any): SharedApplication {
   if (!input) return INITIAL_APPLICATION;
 
@@ -663,7 +560,7 @@ export function normalizeToSharedApplication(input: any): SharedApplication {
   const houseNo = input.address?.houseNo || input.houseNumber || "";
   const street = input.address?.street || input.street || "";
   const barangay = input.address?.barangay || input.barangay || "";
-  const id = input.applicationNumber || input.id || "BVR-2026-001248";
+  const id = input.applicationNumber || input.id || "";
 
   const rawStatus = input.status || "submitted";
   const normalizedStatus = normalizeStatus(rawStatus);
@@ -730,11 +627,12 @@ export function normalizeToSharedApplication(input: any): SharedApplication {
     correctionItems: input.correctionItems || [],
     correctionFields: input.correctionFields || [],
     correctionDate: input.correctionDate || null,
-    activity: input.activity || INITIAL_APPLICATION.activity,
+    activity: input.activity || [],
   };
 }
 
 /** Save updated application into localStorage and notify all listeners */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function saveSharedApplication(raw: any): SharedApplication {
   const updated = normalizeToSharedApplication(raw);
   if (typeof window !== "undefined") {
@@ -891,6 +789,27 @@ export function resetSharedApplication(): SharedApplication {
     cachedSnapshot = { ...INITIAL_APPLICATION };
   }
   return saveSharedApplication({ ...INITIAL_APPLICATION });
+}
+
+/** Completely purges all vendor-specific cached data from localStorage upon logout or account switch */
+export function clearSharedApplication(): void {
+  if (typeof window !== "undefined") {
+    try {
+      localStorage.removeItem(SHARED_APP_STORAGE_KEY);
+      localStorage.removeItem(SHARED_APP_STATUS_KEY);
+      localStorage.removeItem(VENDOR_NOTIFICATIONS_KEY);
+      localStorage.removeItem("vendorApplications");
+      localStorage.removeItem("butuan-vendor-applications");
+      localStorage.removeItem("bvr_active_app_number");
+      localStorage.removeItem("bvr_current_vendor_app_number");
+      lastRaw = null;
+      cachedSnapshot = INITIAL_APPLICATION;
+      window.dispatchEvent(new CustomEvent(APP_UPDATED_EVENT, { detail: INITIAL_APPLICATION }));
+      window.dispatchEvent(new CustomEvent("bvr_notifications_updated", { detail: [] }));
+    } catch (err) {
+      console.error("Failed to clear shared vendor application state:", err);
+    }
+  }
 }
 
 // ─── External Store Subscription for useSyncExternalStore ───────────────────

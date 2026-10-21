@@ -4,7 +4,6 @@ import { useState, useMemo } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  HelpCircle,
   Search,
   X,
   ChevronDown,
@@ -22,10 +21,9 @@ import {
   Mail,
   MapPin,
   CheckCircle2,
-  ExternalLink,
   LifeBuoy,
-  RefreshCw,
   SlidersHorizontal,
+  type LucideIcon,
 } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -701,7 +699,7 @@ const ALL_FAQS: FAQItem[] = [
 
 // ─── CATEGORY FILTER PILLS DEFINITION ────────────────────────────────────────
 
-const CATEGORIES: { id: SupportCategory; label: string; icon: any }[] = [
+const CATEGORIES: { id: SupportCategory; label: string; icon: LucideIcon }[] = [
   { id: "all", label: "All Topics", icon: SlidersHorizontal },
   { id: "registration", label: "Registration & Submission", icon: FileText },
   { id: "status", label: "Application Status & Approval", icon: Clock },
@@ -726,24 +724,6 @@ export default function HelpSupportPage({ portal }: { portal?: "admin" | "vendor
   const [openFaqIds, setOpenFaqIds] = useState<Record<number, boolean>>({ 1: true });
   const [activeView, setActiveView] = useState<"faqs" | "troubleshooting">("faqs");
 
-  // Toggle single FAQ accordion
-  const toggleFaq = (id: number) => {
-    setOpenFaqIds((prev) => ({ ...prev, [id]: !prev[id] }));
-  };
-
-  // Expand all / Collapse all
-  const expandAll = () => {
-    const allOpen: Record<number, boolean> = {};
-    filteredFaqs.forEach((f) => {
-      allOpen[f.id] = true;
-    });
-    setOpenFaqIds(allOpen);
-  };
-
-  const collapseAll = () => {
-    setOpenFaqIds({});
-  };
-
   // Filter FAQs based on search and category
   const filteredFaqs = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -762,6 +742,24 @@ export default function HelpSupportPage({ portal }: { portal?: "admin" | "vendor
       return inQuestion || inAnswer || inTips || inCatName;
     });
   }, [searchQuery, activeCategory]);
+
+  // Toggle single FAQ accordion
+  const toggleFaq = (id: number) => {
+    setOpenFaqIds((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  // Expand all / Collapse all
+  const expandAll = () => {
+    const allOpen: Record<number, boolean> = {};
+    filteredFaqs.forEach((f) => {
+      allOpen[f.id] = true;
+    });
+    setOpenFaqIds(allOpen);
+  };
+
+  const collapseAll = () => {
+    setOpenFaqIds({});
+  };
 
   // Filter Troubleshooting guides based on search and category
   const filteredTroubleshooting = useMemo(() => {

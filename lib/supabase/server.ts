@@ -1,4 +1,5 @@
 import { VendorApplication } from "@/lib/types/vendor-application";
+import { isDemoOrMockApplication } from "@/lib/mock-filter";
 
 const SUPABASE_URL =
   process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -32,6 +33,7 @@ async function callRpc<T = unknown>(
     },
     body: JSON.stringify(params),
     cache: "no-store",
+    signal: AbortSignal.timeout(8000),
   });
 
   if (!res.ok) {
@@ -121,6 +123,13 @@ export async function dbGetAllApplications(): Promise<VendorApplication[]> {
 export async function dbSaveVendorApplication(
   application: VendorApplication
 ): Promise<VendorApplication> {
+  if (isDemoOrMockApplication(application)) {
+    console.warn(
+      `[DATABASE INTEGRITY] Blocked attempt to save mock/synthetic application to Supabase: ${application.id || application.applicationNumber}`
+    );
+    return application;
+  }
+
   const res = await callRpc<VendorApplication>(
     "api_save_vendor_application",
     {
@@ -187,7 +196,7 @@ export async function dbAddAuditLog(
  */
 export async function dbGetNotifications(userId: string) {
   try {
-    const res = await callRpc<any[]>("api_get_notifications", {
+    const res = await callRpc<Record<string, unknown>[]>("api_get_notifications", {
       p_user_id: userId,
     });
     return Array.isArray(res) ? res : [];
@@ -243,3 +252,52 @@ export async function dbMarkNotificationRead(notificationId: string): Promise<bo
     return false;
   }
 }
+
+/**
+ * Soft-deletes / archives a vendor application in Supabase PostgreSQL database
+ * preserving historical records, documents, payments, and audit logs.
+ */
+export async function dbDeleteVendorApplication(
+  appNumberOrId: string,
+  deletedBy = "Administrator",
+  reason = "Archived by Administrator"
+): Promise<boolean> {
+  if (!appNumberOrId) return false;
+  try {
+    const res = await callRpc<VendorApplication>("api_admin_delete_application", {
+      p_app_number: appNumberOrId,
+      p_deleted_by: deletedBy,
+      p_reason: reason,
+    });
+    return Boolean(res);
+  } catch (err) {
+    console.warn("Supabase dbDeleteVendorApplication error:", err);
+    return false;
+  }
+}
+
+/**
+ * Permanently removes a vendor application from Supabase PostgreSQL database.
+ * Used when an administrator permanently deletes an archived record.
+ * Foreign keys with ON DELETE CASCADE (documents, payments, status history) are removed,
+ * while vendor profile and other applications belonging to the vendor remain intact.
+ */
+export async function dbPermanentDeleteApplication(
+  appNumberOrId: string
+): Promise<boolean> {
+  if (!appNumberOrId) return false;
+  try {
+    const res = await callRpc<{ success: boolean; error?: string }>(
+      "api_admin_permanent_delete_application",
+      {
+        p_app_number: appNumberOrId,
+      }
+    );
+    return Boolean(res?.success);
+  } catch (err) {
+    console.warn("Supabase dbPermanentDeleteApplication error:", err);
+    return false;
+  }
+}
+
+

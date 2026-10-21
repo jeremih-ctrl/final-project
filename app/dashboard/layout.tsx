@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -24,7 +24,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { setVendorSession, clearVendorSession } from "@/lib/demo-auth";
 import { useVendorNotifications } from "@/lib/notifications-data";
 import { useAppRole } from "@/lib/clerk-roles";
-import { saveSharedApplication } from "@/lib/vendor-application-state";
+import { saveSharedApplication, clearSharedApplication } from "@/lib/vendor-application-state";
 import { UserButton, SignOutButton, useClerk } from "@clerk/nextjs";
 
 interface NavItem {
@@ -39,6 +39,7 @@ interface NavItem {
 
 interface SidebarNavProps {
   pathname: string;
+  activeAppNumber?: string | null;
   onNavigate?: () => void;
   onLogout?: () => Promise<void> | void;
   isLoggingOut?: boolean;
@@ -47,12 +48,13 @@ interface SidebarNavProps {
 
 function SidebarNav({
   pathname,
+  activeAppNumber,
   onNavigate,
   onLogout,
   isLoggingOut = false,
   logoutError = null,
 }: SidebarNavProps) {
-  const { unreadCount } = useVendorNotifications("BVR-2026-001248");
+  const { unreadCount } = useVendorNotifications(activeAppNumber || "");
 
   const navItems: NavItem[] = [
     {
@@ -216,14 +218,18 @@ export default function DashboardLayout({
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [logoutError, setLogoutError] = useState<string | null>(null);
 
+  const [activeAppNumber, setActiveAppNumber] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
   const handleVendorLogout = async () => {
     if (isLoggingOut) return;
     setIsLoggingOut(true);
     setLogoutError(null);
 
     try {
-      // Clear client session tokens
+      // Clear client session tokens and shared application cache
       clearVendorSession();
+      clearSharedApplication();
 
       // Sign out using Clerk's supported signOut method and redirect to public home
       await signOut({ redirectUrl: "/" });
@@ -248,7 +254,6 @@ export default function DashboardLayout({
   } = useAppRole();
 
   const [isFetchingApp, setIsFetchingApp] = useState(true);
-  const [hasApplication, setHasApplication] = useState<boolean | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   // If user is signed in with Clerk as Admin, redirect them to the Admin Portal
@@ -258,7 +263,17 @@ export default function DashboardLayout({
     }
   }, [isClerkLoaded, isClerkSignedIn, isClerkAdmin, router]);
 
-  const loadPersistentApplication = async () => {
+  // Account switch guard: clear cache immediately if the signed-in Clerk user changes
+  if (clerkUser?.id && currentUserId !== clerkUser.id) {
+    if (currentUserId) {
+      clearVendorSession();
+      clearSharedApplication();
+      setActiveAppNumber(null);
+    }
+    setCurrentUserId(clerkUser.id);
+  }
+
+  const loadPersistentApplication = useCallback(async () => {
     setIsFetchingApp(true);
     setLoadError(null);
     try {
@@ -267,7 +282,7 @@ export default function DashboardLayout({
         const data = await res.json().catch(() => ({}));
         if (data?.application) {
           saveSharedApplication(data.application);
-          setHasApplication(true);
+          setActiveAppNumber(data.application.applicationNumber || data.application.id);
           setLoadError(null);
           setVendorSession({
             email: clerkEmail || data.application.contact?.emailAddress || "vendor@butuan.gov.ph",
@@ -276,7 +291,7 @@ export default function DashboardLayout({
           });
           return;
         } else {
-          setHasApplication(false);
+          setActiveAppNumber(null);
           setLoadError(null);
           return;
         }
@@ -289,18 +304,29 @@ export default function DashboardLayout({
     } finally {
       setIsFetchingApp(false);
     }
-  };
+  }, [clerkEmail, clerkUser]);
 
   // Restore vendor's persistent application upon Clerk/Google authentication
   useEffect(() => {
     if (!isClerkLoaded || !isClerkSignedIn || isClerkAdmin) return;
-    loadPersistentApplication();
-  }, [isClerkLoaded, isClerkSignedIn, isClerkAdmin, clerkEmail, clerkUser]);
+    let isCancelled = false;
+    const fetchApp = async () => {
+      await Promise.resolve();
+      if (!isCancelled) {
+        loadPersistentApplication();
+      }
+    };
+    fetchApp();
+    return () => {
+      isCancelled = true;
+    };
+  }, [isClerkLoaded, isClerkSignedIn, isClerkAdmin, loadPersistentApplication]);
 
   // Redirect to unified login if completely unauthenticated with Clerk
   useEffect(() => {
     if (isClerkLoaded && !isClerkSignedIn && !isLoggingOut) {
       clearVendorSession();
+      clearSharedApplication();
       router.replace("/login");
     }
   }, [isClerkLoaded, isClerkSignedIn, isLoggingOut, router]);
@@ -394,50 +420,6 @@ export default function DashboardLayout({
     );
   }
 
-  // If vendor has no linked application yet, direct them to register rather than showing fabricated mock data
-  if (isClerkSignedIn && hasApplication === false) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-        <div className="max-w-md w-full bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 text-center space-y-4 shadow-xl">
-          <div className="w-14 h-14 rounded-2xl bg-blue-50 border border-blue-200 text-blue-600 mx-auto flex items-center justify-center">
-            <Store className="w-7 h-7" />
-          </div>
-          <div className="space-y-1.5">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200">
-              No Application Found
-            </span>
-            <h2 className="text-xl font-bold text-slate-900">
-              Vendor Registration Required
-            </h2>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              You are signed in as <strong className="text-slate-800">{clerkEmail}</strong>, but there is no business application connected to this account yet. Please register your vendor details to activate your dashboard.
-            </p>
-          </div>
-
-          <div className="pt-2 space-y-2">
-            <Link
-              href="/register"
-              className={cn(
-                buttonVariants({ variant: "default" }),
-                "w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs h-10 rounded-xl cursor-pointer"
-              )}
-            >
-              Start Vendor Registration
-            </Link>
-
-            <SignOutButton redirectUrl="/login">
-              <button
-                type="button"
-                className="w-full text-xs font-medium text-slate-600 hover:text-slate-900 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors cursor-pointer"
-              >
-                Sign Out &amp; Use Another Account
-              </button>
-            </SignOutButton>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   // ROLE RESTRICTION GUARD:
   // If user is signed in with Clerk as Admin, route them away from vendor dashboard
@@ -492,6 +474,7 @@ export default function DashboardLayout({
       <aside className="hidden lg:flex w-64 flex-col fixed inset-y-0 z-30 shadow-xs border-r border-slate-800">
         <SidebarNav
           pathname={pathname}
+          activeAppNumber={activeAppNumber}
           onLogout={handleVendorLogout}
           isLoggingOut={isLoggingOut}
           logoutError={logoutError}
@@ -519,6 +502,7 @@ export default function DashboardLayout({
               <SheetContent side="left" className="w-72 p-0 border-r-0">
                 <SidebarNav
                   pathname={pathname}
+                  activeAppNumber={activeAppNumber}
                   onNavigate={() => setMobileMenuOpen(false)}
                   onLogout={handleVendorLogout}
                   isLoggingOut={isLoggingOut}

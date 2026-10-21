@@ -7,59 +7,89 @@ import {
   dbGetAllApplications,
   dbSaveVendorApplication,
   dbAdminUpdateApplication,
+  dbDeleteVendorApplication,
+  dbPermanentDeleteApplication,
 } from "@/lib/supabase/server";
+import { isDemoOrMockApplication } from "@/lib/mock-filter";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const APPLICATIONS_FILE = path.join(DATA_DIR, "vendor-applications.json");
 
+// In-memory runtime cache for serverless environments where local disk is read-only
+let memoryApplicationsCache: VendorApplication[] | null = null;
+
 function ensureDirectoryExists(): void {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+  } catch {
+    // Read-only filesystem in serverless environments (e.g. Vercel)
   }
 }
 
 /**
- * Reads all stored vendor applications from local cache.
+ * Reads all stored vendor applications from runtime cache or local file.
  */
 export function getAllPersistentApplications(): VendorApplication[] {
+  if (memoryApplicationsCache !== null) {
+    return memoryApplicationsCache;
+  }
   ensureDirectoryExists();
   if (!fs.existsSync(APPLICATIONS_FILE)) {
+    memoryApplicationsCache = [];
     return [];
   }
   try {
     const raw = fs.readFileSync(APPLICATIONS_FILE, "utf-8");
-    if (!raw.trim()) return [];
+    if (!raw.trim()) {
+      memoryApplicationsCache = [];
+      return [];
+    }
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) {
+      memoryApplicationsCache = [];
+      return [];
+    }
+    const genuine = parsed.filter((app) => !isDemoOrMockApplication(app));
+    memoryApplicationsCache = genuine;
+    return genuine;
   } catch (err) {
-    console.error("Failed to read vendor applications file:", err);
+    console.warn("Failed to read vendor applications file:", err);
+    memoryApplicationsCache = [];
     return [];
   }
 }
 
 /**
- * Atomically writes the applications array to local cache on disk.
+ * Atomically writes the applications array to runtime memory and attempts disk sync.
+ * Safely handles serverless environments (Vercel) where filesystem is read-only.
  */
 function saveAllPersistentApplications(applications: VendorApplication[]): void {
-  ensureDirectoryExists();
-  const serialized = JSON.stringify(applications, null, 2);
-  const tmpFile = `${APPLICATIONS_FILE}.tmp.${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  memoryApplicationsCache = [...applications];
   try {
-    fs.writeFileSync(tmpFile, serialized, "utf-8");
+    ensureDirectoryExists();
+    const serialized = JSON.stringify(applications, null, 2);
+    const tmpFile = `${APPLICATIONS_FILE}.tmp.${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     try {
-      fs.renameSync(tmpFile, APPLICATIONS_FILE);
-    } catch {
+      fs.writeFileSync(tmpFile, serialized, "utf-8");
       try {
-        fs.copyFileSync(tmpFile, APPLICATIONS_FILE);
-        if (fs.existsSync(tmpFile)) {
-          fs.unlinkSync(tmpFile);
-        }
+        fs.renameSync(tmpFile, APPLICATIONS_FILE);
       } catch {
-        fs.writeFileSync(APPLICATIONS_FILE, serialized, "utf-8");
+        try {
+          fs.copyFileSync(tmpFile, APPLICATIONS_FILE);
+          if (fs.existsSync(tmpFile)) {
+            fs.unlinkSync(tmpFile);
+          }
+        } catch {
+          fs.writeFileSync(APPLICATIONS_FILE, serialized, "utf-8");
+        }
       }
+    } catch {
+      // Ignored if disk is read-only in serverless lambda
     }
-  } catch (err) {
-    console.error("Failed to write applications disk cache:", err);
+  } catch {
+    // Disk write error in serverless environment handled gracefully
   }
 }
 
@@ -70,9 +100,10 @@ function saveAllPersistentApplications(applications: VendorApplication[]): void 
 export async function getAllPersistentApplicationsAsync(): Promise<VendorApplication[]> {
   try {
     const dbApps = await dbGetAllApplications();
-    if (Array.isArray(dbApps) && dbApps.length > 0) {
-      saveAllPersistentApplications(dbApps);
-      return dbApps;
+    if (Array.isArray(dbApps)) {
+      const genuineApps = dbApps.filter((a) => !isDemoOrMockApplication(a));
+      saveAllPersistentApplications(genuineApps);
+      return genuineApps;
     }
   } catch (err) {
     console.warn("Supabase dbGetAllApplications warning, falling back to disk cache:", err);
@@ -89,20 +120,13 @@ export async function getPersistentApplicationsByUserIdAsync(
   if (!userId) return [];
   try {
     const dbApps = await dbGetVendorApplications(userId);
-    if (Array.isArray(dbApps) && dbApps.length > 0) {
-      // Merge into local cache
-      const cached = getAllPersistentApplications();
-      const merged = [...cached];
-      for (const app of dbApps) {
-        const idx = merged.findIndex((m) => m.applicationNumber === app.applicationNumber || m.id === app.id);
-        if (idx >= 0) {
-          merged[idx] = app;
-        } else {
-          merged.unshift(app);
-        }
-      }
-      saveAllPersistentApplications(merged);
-      return dbApps;
+    if (Array.isArray(dbApps)) {
+      const genuineApps = dbApps.filter(
+        (app) =>
+          !isDemoOrMockApplication(app) &&
+          (app.userId === userId || (app as unknown as { clerkUserId?: string }).clerkUserId === userId)
+      );
+      return genuineApps;
     }
   } catch (err) {
     console.warn("Supabase dbGetVendorApplications warning, falling back to disk cache:", err);
@@ -117,7 +141,7 @@ export async function getPersistentApplicationByUserIdAsync(
   userId: string
 ): Promise<VendorApplication | null> {
   const apps = await getPersistentApplicationsByUserIdAsync(userId);
-  return apps[0] || null;
+  return apps.find((a) => !a.isDeleted) || apps[0] || null;
 }
 
 /**
@@ -143,11 +167,8 @@ export async function getPersistentApplicationByIdAsync(
  */
 export function getPersistentApplicationByUserId(userId: string): VendorApplication | null {
   if (!userId) return null;
-  const applications = getAllPersistentApplications();
-  const found = applications.find(
-    (app) => app.userId === userId || (app as unknown as { clerkUserId?: string }).clerkUserId === userId
-  );
-  return found || null;
+  const userApps = getPersistentApplicationsByUserId(userId);
+  return userApps.find((a) => !a.isDeleted) || userApps[0] || null;
 }
 
 /**
@@ -182,6 +203,13 @@ export function getPersistentApplicationById(idOrNumber: string): VendorApplicat
 export async function savePersistentApplicationAsync(
   application: VendorApplication
 ): Promise<VendorApplication> {
+  if (isDemoOrMockApplication(application)) {
+    console.warn(
+      `[DATA INTEGRITY] Blocked attempt to persist async synthetic/demo application: ${application.id || application.applicationNumber}`
+    );
+    return application;
+  }
+
   // Always update local disk cache
   const localSaved = savePersistentApplication(application);
 
@@ -202,6 +230,13 @@ export async function savePersistentApplicationAsync(
  * Sync: Persists a new or updated application record to disk, and triggers Supabase sync in background.
  */
 export function savePersistentApplication(application: VendorApplication): VendorApplication {
+  if (isDemoOrMockApplication(application)) {
+    console.warn(
+      `[DATA INTEGRITY] Blocked attempt to persist synthetic/demo application: ${application.id || application.applicationNumber}`
+    );
+    return application;
+  }
+
   const applications = getAllPersistentApplications();
   const now = new Date().toISOString();
 
@@ -220,30 +255,70 @@ export function savePersistentApplication(application: VendorApplication): Vendo
 
   if (existingIndex >= 0) {
     const existing = applications[existingIndex];
+
+    // Enforce strict vendor ownership:
+    // If the existing application belongs to another user, DO NOT overwrite it.
+    // Generate a fresh unique application number instead to preserve both users' data.
+    if (existing.userId && preparedApp.userId && existing.userId !== preparedApp.userId) {
+      console.warn(
+        `[SECURITY] Cross-user collision prevented for ${preparedApp.applicationNumber || preparedApp.id} (Owner: ${existing.userId}, Incoming: ${preparedApp.userId}). Assigning new reference.`
+      );
+      const newAppNumber = generateServerApplicationNumber();
+      preparedApp.id = newAppNumber;
+      preparedApp.applicationNumber = newAppNumber;
+      applications.unshift(preparedApp);
+      saveAllPersistentApplications(applications);
+
+      if (!isDemoOrMockApplication(preparedApp)) {
+        dbSaveVendorApplication(preparedApp).catch((err) => {
+          console.warn("Background sync to Supabase failed:", err);
+        });
+      }
+      return preparedApp;
+    }
+
     applications[existingIndex] = {
       ...existing,
       ...preparedApp,
       id: existing.id || preparedApp.id,
       applicationNumber: existing.applicationNumber || preparedApp.applicationNumber,
       createdAt: existing.createdAt || preparedApp.createdAt,
-      userId: preparedApp.userId || existing.userId,
+      userId: existing.userId || preparedApp.userId,
     };
     saveAllPersistentApplications(applications);
 
-    // Background sync to Supabase
-    dbSaveVendorApplication(applications[existingIndex]).catch((err) => {
-      console.warn("Background sync to Supabase failed:", err);
-    });
+    const isTestUser = Boolean(
+      preparedApp.userId?.startsWith("user_test_") ||
+      preparedApp.userId?.startsWith("user_synthetic_") ||
+      (preparedApp as unknown as { clerkUserId?: string })?.clerkUserId?.startsWith("user_test_") ||
+      (preparedApp as unknown as { clerkUserId?: string })?.clerkUserId?.startsWith("user_synthetic_")
+    );
+
+    // Background sync to Supabase only for genuine non-test applications
+    if (!isDemoOrMockApplication(applications[existingIndex]) && !isTestUser) {
+      dbSaveVendorApplication(applications[existingIndex]).catch((err) => {
+        console.warn("Background sync to Supabase failed:", err);
+      });
+    }
 
     return applications[existingIndex];
   } else {
     applications.unshift(preparedApp);
     saveAllPersistentApplications(applications);
 
-    // Background sync to Supabase
-    dbSaveVendorApplication(preparedApp).catch((err) => {
-      console.warn("Background sync to Supabase failed:", err);
-    });
+    const isTestUser = Boolean(
+      preparedApp.userId?.startsWith("user_test_") ||
+      preparedApp.userId?.startsWith("user_synthetic_") ||
+      (preparedApp as unknown as { clerkUserId?: string })?.clerkUserId?.startsWith("user_test_") ||
+      (preparedApp as unknown as { clerkUserId?: string })?.clerkUserId?.startsWith("user_synthetic_")
+    );
+
+    // Background sync to Supabase only for genuine non-test applications
+    if (!isDemoOrMockApplication(preparedApp) && !isTestUser) {
+      dbSaveVendorApplication(preparedApp).catch((err) => {
+        console.warn("Background sync to Supabase failed:", err);
+      });
+    }
 
     return preparedApp;
   }
@@ -306,36 +381,148 @@ export function updatePersistentApplication(
   applications[index] = updated;
   saveAllPersistentApplications(applications);
 
-  // Background sync to Supabase
-  dbAdminUpdateApplication(existing.applicationNumber || existing.id, updates).catch((err) => {
-    console.warn("Background sync to Supabase failed:", err);
-  });
+  // Background sync to Supabase only for genuine non-test applications
+  const isTestUser = Boolean(
+    existing.userId?.startsWith("user_test_") ||
+    existing.userId?.startsWith("user_synthetic_") ||
+    (existing as unknown as { clerkUserId?: string })?.clerkUserId?.startsWith("user_test_") ||
+    (existing as unknown as { clerkUserId?: string })?.clerkUserId?.startsWith("user_synthetic_")
+  );
+  if (!isDemoOrMockApplication(existing) && !isTestUser) {
+    dbAdminUpdateApplication(existing.applicationNumber || existing.id, updates).catch((err) => {
+      console.warn("Background sync to Supabase failed:", err);
+    });
+  }
 
   return updated;
 }
 
 /**
  * Deletes an application from persistent storage.
+/**
+ * Soft-deletes / archives an application from active status while preserving
+ * its original reference number, historical information, documents, and audit trails.
  */
-export function deletePersistentApplication(idOrNumber: string): boolean {
+export function deletePersistentApplication(
+  idOrNumber: string,
+  deletedBy = "Administrator",
+  reason = "Archived by Administrator"
+): boolean {
   if (!idOrNumber) return false;
   const normalized = idOrNumber.trim().toLowerCase();
   const applications = getAllPersistentApplications();
-  const initialLength = applications.length;
 
-  const filtered = applications.filter(
+  const index = applications.findIndex(
     (app) =>
-      app.id?.toLowerCase() !== normalized &&
-      app.applicationNumber?.toLowerCase() !== normalized &&
-      app.userId !== idOrNumber
+      app.id?.toLowerCase() === normalized ||
+      app.applicationNumber?.toLowerCase() === normalized
   );
 
-  if (filtered.length !== initialLength) {
-    saveAllPersistentApplications(filtered);
-    return true;
+  if (index === -1) return false;
+
+  const app = applications[index];
+  const now = new Date().toISOString();
+
+  const historyEntry = {
+    id: `hist-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    previousStatus: app.status,
+    newStatus: app.status,
+    timestamp: now,
+    action: "Application Deleted by Administrator",
+    actionBy: deletedBy,
+    remark: reason,
+  };
+
+  const updated: VendorApplication = {
+    ...app,
+    isDeleted: true,
+    deletedAt: now,
+    deletedBy,
+    deletedReason: reason,
+    updatedAt: now,
+    statusHistory: [...(app.statusHistory || []), historyEntry],
+  };
+
+  applications[index] = updated;
+  saveAllPersistentApplications(applications);
+
+  // Background sync to Supabase only for genuine non-test applications
+  const isTestUser = Boolean(
+    app.userId?.startsWith("user_test_") ||
+    app.userId?.startsWith("user_synthetic_") ||
+    (app as unknown as { clerkUserId?: string })?.clerkUserId?.startsWith("user_test_") ||
+    (app as unknown as { clerkUserId?: string })?.clerkUserId?.startsWith("user_synthetic_")
+  );
+  if (!isDemoOrMockApplication(app) && !isTestUser) {
+    dbDeleteVendorApplication(app.applicationNumber || app.id, deletedBy, reason).catch((err) => {
+      console.warn("Background sync to Supabase delete failed:", err);
+    });
   }
-  return false;
+
+  return true;
 }
+
+/**
+ * Async: Soft-deletes / archives an application in disk cache and triggers Supabase archival.
+ */
+export async function deletePersistentApplicationAsync(
+  idOrNumber: string,
+  deletedBy = "Administrator",
+  reason = "Archived by Administrator"
+): Promise<boolean> {
+  const localDeleted = deletePersistentApplication(idOrNumber, deletedBy, reason);
+  try {
+    await dbDeleteVendorApplication(idOrNumber, deletedBy, reason);
+  } catch (err) {
+    console.warn("Supabase dbDeleteVendorApplication failed:", err);
+  }
+  return localDeleted;
+}
+
+/**
+ * Permanently removes an application from persistent storage (disk cache and Supabase).
+ * Used when an administrator permanently deletes an archived record.
+ * Only targets the specific application by ID or application number.
+ * Vendor profiles and other vendor applications remain intact.
+ */
+export function purgePersistentApplication(idOrNumber: string): boolean {
+  if (!idOrNumber) return false;
+  const normalized = idOrNumber.trim().toLowerCase();
+  const applications = getAllPersistentApplications();
+
+  const index = applications.findIndex(
+    (app) =>
+      app.id?.toLowerCase() === normalized ||
+      app.applicationNumber?.toLowerCase() === normalized
+  );
+
+  if (index === -1) return false;
+
+  const app = applications[index];
+  applications.splice(index, 1);
+  saveAllPersistentApplications(applications);
+
+  // Background sync permanent delete to Supabase
+  dbPermanentDeleteApplication(app.applicationNumber || app.id).catch((err) => {
+    console.warn("Background sync to Supabase permanent delete failed:", err);
+  });
+
+  return true;
+}
+
+/**
+ * Async: Permanently removes an application from persistent storage and Supabase database.
+ */
+export async function purgePersistentApplicationAsync(idOrNumber: string): Promise<boolean> {
+  const localPurged = purgePersistentApplication(idOrNumber);
+  try {
+    await dbPermanentDeleteApplication(idOrNumber);
+  } catch (err) {
+    console.warn("Supabase dbPermanentDeleteApplication failed:", err);
+  }
+  return localPurged;
+}
+
 
 /**
  * Generates the next sequential application number purely on the server.
@@ -343,8 +530,9 @@ export function deletePersistentApplication(idOrNumber: string): boolean {
 export function generateServerApplicationNumber(): string {
   const year = new Date().getFullYear();
   const allApps = getAllPersistentApplications();
-  let maxSeq = 1248;
+  let maxSeq = 0;
   for (const app of allApps) {
+    if (isDemoOrMockApplication(app)) continue;
     const num = app.applicationNumber || app.id || "";
     const match = num.match(/BVR-\d{4}-(\d+)/i);
     if (match) {

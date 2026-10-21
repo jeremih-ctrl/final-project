@@ -1,13 +1,14 @@
-import { auth, clerkClient } from "@clerk/nextjs/server";
+import { auth, clerkClient, type User } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import {
   getPersistentApplicationByIdAsync,
   updatePersistentApplicationAsync,
-  deletePersistentApplication,
+  deletePersistentApplicationAsync,
+  purgePersistentApplicationAsync,
 } from "@/lib/server/vendor-applications-db";
 import { dbAddAuditLog, dbCreateNotification } from "@/lib/supabase/server";
 
-async function verifyAdminRole(): Promise<{ isAdmin: boolean; errorResponse?: NextResponse; user?: any }> {
+async function verifyAdminRole(): Promise<{ isAdmin: boolean; errorResponse?: NextResponse; user?: User }> {
   const { userId } = await auth();
   if (!userId) {
     return {
@@ -143,7 +144,7 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _req: Request,
+  req: Request,
   props: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -153,11 +154,44 @@ export async function DELETE(
     }
 
     const { id } = await props.params;
-    const success = deletePersistentApplication(id);
+    const url = new URL(req.url);
+    const isPermanentQuery = url.searchParams.get("permanent") === "true";
+    const body = await req.json().catch(() => ({}));
+    const isPermanent = isPermanentQuery || Boolean(body?.permanent);
+    const reason = body?.reason || "Application record archived and deleted by administrator";
+    const adminName = authCheck.user?.fullName || "Administrator";
+
+    if (isPermanent) {
+      const success = await purgePersistentApplicationAsync(id);
+      if (!success) {
+        return NextResponse.json(
+          { error: "Application not found or could not be permanently deleted" },
+          { status: 404 }
+        );
+      }
+
+      if (authCheck.user) {
+        await dbAddAuditLog(
+          authCheck.user.id,
+          adminName,
+          "admin",
+          id,
+          "Admin Permanently Deleted Application Record",
+          { applicationNumber: id, permanent: true }
+        );
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: "Application permanently deleted from archive",
+      });
+    }
+
+    const success = await deletePersistentApplicationAsync(id, adminName, reason);
 
     if (!success) {
       return NextResponse.json(
-        { error: "Application not found or could not be deleted" },
+        { error: "Application not found or could not be archived" },
         { status: 404 }
       );
     }
@@ -165,19 +199,21 @@ export async function DELETE(
     if (authCheck.user) {
       await dbAddAuditLog(
         authCheck.user.id,
-        authCheck.user.fullName || "Administrator",
+        adminName,
         "admin",
         id,
-        "Admin Deleted Application Record"
+        "Admin Archived/Deleted Application Record",
+        { reason }
       );
     }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, message: "Application archived successfully" });
   } catch (error) {
-    console.error("Error deleting application:", error);
+    console.error("Error in application deletion handler:", error);
     return NextResponse.json(
-      { error: "Failed to delete application" },
+      { error: "Failed to process application deletion request" },
       { status: 500 }
     );
   }
 }
+

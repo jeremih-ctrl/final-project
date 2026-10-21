@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -23,37 +23,97 @@ import {
   Clock,
   MapPin,
   PieChart,
+  FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useStoredApplications } from "@/lib/application-store";
+import { exportLifecycleBreakdownPDF } from "@/lib/lifecycle-breakdown-pdf";
+import {
+  useStoredApplications,
+  useDeletedApplicationIds,
+  isDemoOrMockApplication,
+  createApplication,
+} from "@/lib/application-store";
+import type { VendorApplication } from "@/lib/types/vendor-application";
 
 export default function AdminReportsPage() {
   const storedApplications = useStoredApplications();
+  const deletedApplicationIds = useDeletedApplicationIds();
   const [downloadNotice, setDownloadNotice] = useState<string | null>(null);
 
-  // Dynamic calculations based solely on stored applications
+  // Synchronize applications from server persistent database on mount
+  useEffect(() => {
+    fetch("/api/admin/applications", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.applications && Array.isArray(data.applications)) {
+          data.applications.forEach((app: VendorApplication) => {
+            createApplication(app);
+          });
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to load server applications for reports:", err);
+      });
+  }, []);
+
+  // Dynamic calculations based solely on genuine stored applications
   const stats = useMemo(() => {
+    const deletedSet = new Set(
+      deletedApplicationIds.map((id) => id.trim().toLowerCase())
+    );
+
+    const isAppDeleted = (app: VendorApplication) => {
+      const normId = (app.id || "").trim().toLowerCase();
+      const normAppNum = (app.applicationNumber || "").trim().toLowerCase();
+      return (
+        Boolean(app.isDeleted) ||
+        (normId ? deletedSet.has(normId) : false) ||
+        (normAppNum ? deletedSet.has(normAppNum) : false)
+      );
+    };
+
+    const genuineStored = storedApplications.filter(
+      (app) => !isDemoOrMockApplication(app)
+    );
+
+    const seenIds = new Set<string>();
+    const deduplicated: VendorApplication[] = [];
+    for (const app of genuineStored) {
+      const key = (app.applicationNumber || app.id || "").trim().toLowerCase();
+      if (key && !seenIds.has(key)) {
+        seenIds.add(key);
+        deduplicated.push(app);
+      }
+    }
+
+    const activeApps = deduplicated.filter((a) => !isAppDeleted(a));
+    const archivedApps = deduplicated.filter((a) => isAppDeleted(a));
+
     let approved = 0;
     let underReview = 0;
     let needsCorrection = 0;
     let submitted = 0;
     let rejected = 0;
 
-    storedApplications.forEach((app) => {
+    activeApps.forEach((app) => {
       const s = app.status.toLowerCase();
-      if (s === "approved") approved += 1;
-      else if (s === "under_review" || s === "correction_submitted") underReview += 1;
-      else if (s === "needs_correction") needsCorrection += 1;
+      if (s === "approved" || app.verificationStatus === "Verified") approved += 1;
+      else if (s === "under_review" || s === "correction_submitted" || s === "under review" || s === "correction submitted") underReview += 1;
+      else if (s === "needs_correction" || s === "needs correction") needsCorrection += 1;
       else if (s === "rejected") rejected += 1;
-      else if (s === "submitted") submitted += 1;
+      else if (s === "submitted" || s === "draft") submitted += 1;
       else underReview += 1;
     });
 
-    const total = approved + underReview + needsCorrection + submitted + rejected;
-    const approvalRate = total > 0 ? ((approved / total) * 100).toFixed(1) : "0.0";
+    const totalActive = activeApps.length;
+    const totalAll = deduplicated.length;
+    const archived = archivedApps.length;
+    const approvalRate = totalActive > 0 ? ((approved / totalActive) * 100).toFixed(1) : "0.0";
 
     return {
-      total,
+      total: totalAll,
+      totalActive,
+      archived,
       approved,
       underReview,
       needsCorrection,
@@ -61,7 +121,7 @@ export default function AdminReportsPage() {
       rejected,
       approvalRate,
     };
-  }, [storedApplications]);
+  }, [storedApplications, deletedApplicationIds]);
 
   // Dynamic Barangays Distribution
   const barangayDistribution = useMemo(() => {
@@ -135,6 +195,61 @@ export default function AdminReportsPage() {
       headers,
       rows
     );
+  };
+
+  const handleExportLifecyclePDF = () => {
+    const calcPct = (count: number) =>
+      stats.total > 0 ? `${((count / stats.total) * 100).toFixed(1)}%` : "0.0%";
+
+    const rows = [
+      {
+        statusTier: "Approved (Accredited)",
+        volume: stats.approved,
+        ratio: calcPct(stats.approved),
+        classificationAction: "Issued Official Vendor ID",
+      },
+      {
+        statusTier: "Under Administrative Review",
+        volume: stats.underReview,
+        ratio: calcPct(stats.underReview),
+        classificationAction: "Assigned Evaluator Active",
+      },
+      {
+        statusTier: "Needs Correction",
+        volume: stats.needsCorrection,
+        ratio: calcPct(stats.needsCorrection),
+        classificationAction: "Pending Vendor Correction",
+      },
+      {
+        statusTier: "Submitted (New Intake)",
+        volume: stats.submitted,
+        ratio: calcPct(stats.submitted),
+        classificationAction: "In Intake Queue",
+      },
+      {
+        statusTier: "Rejected",
+        volume: stats.rejected,
+        ratio: calcPct(stats.rejected),
+        classificationAction: "Zoning Non-Compliance",
+      },
+      {
+        statusTier: "Archived",
+        volume: stats.archived,
+        ratio: calcPct(stats.archived),
+        classificationAction: "Preserved in Archive History",
+      },
+    ];
+
+    const result = exportLifecycleBreakdownPDF({
+      totalCount: stats.total,
+      activeCount: stats.totalActive,
+      archivedCount: stats.archived,
+      approvalRate: stats.approvalRate,
+      rows,
+    });
+
+    setDownloadNotice(`Export completed: "${result.filename}" downloaded.`);
+    setTimeout(() => setDownloadNotice(null), 4000);
   };
 
   const handleExportBarangayCSV = () => {
@@ -283,11 +398,11 @@ export default function AdminReportsPage() {
               type="button"
               variant="outline"
               size="sm"
-              onClick={handleExportSummaryCSV}
+              onClick={handleExportLifecyclePDF}
               className="text-xs gap-1.5 h-8 font-semibold"
             >
-              <Download className="w-3.5 h-3.5" />
-              <span>Export CSV</span>
+              <FileText className="w-3.5 h-3.5" />
+              <span>Export PDF</span>
             </Button>
           </CardHeader>
 
@@ -319,6 +434,13 @@ export default function AdminReportsPage() {
                 style={{ width: `${stats.total > 0 ? (stats.rejected / stats.total) * 100 : 0}%` }}
                 title={`Rejected: ${stats.rejected}`}
               />
+              {stats.archived > 0 && (
+                <div
+                  className="bg-slate-700 h-full"
+                  style={{ width: `${stats.total > 0 ? (stats.archived / stats.total) * 100 : 0}%` }}
+                  title={`Archived: ${stats.archived}`}
+                />
+              )}
             </div>
 
             {/* Status Breakdown Table */}
@@ -401,6 +523,20 @@ export default function AdminReportsPage() {
                       {stats.total > 0 ? ((stats.rejected / stats.total) * 100).toFixed(1) : "0.0"}%
                     </TableCell>
                     <TableCell className="text-xs text-slate-600">Zoning Non-Compliance</TableCell>
+                  </TableRow>
+
+                  <TableRow>
+                    <TableCell className="py-2.5 font-semibold text-xs flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full bg-slate-700" />
+                      <span>Archived</span>
+                    </TableCell>
+                    <TableCell className="text-right py-2.5 font-mono text-xs font-bold text-slate-800">
+                      {stats.archived}
+                    </TableCell>
+                    <TableCell className="text-right py-2.5 font-mono text-xs text-slate-600">
+                      {stats.total > 0 ? ((stats.archived / stats.total) * 100).toFixed(1) : "0.0"}%
+                    </TableCell>
+                    <TableCell className="text-xs text-slate-600">Preserved in Archive History</TableCell>
                   </TableRow>
                 </TableBody>
               </Table>

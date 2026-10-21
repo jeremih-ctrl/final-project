@@ -233,6 +233,16 @@ export interface VendorApplication {
   /** Chronological audit log of all status transitions and actions */
   statusHistory: StatusHistoryEntry[];
 
+  // 7.5. Soft-Delete & Archival information
+  /** Whether this application has been archived or soft-deleted by an administrator */
+  isDeleted?: boolean;
+  /** Timestamp when application was deleted or archived by administrator */
+  deletedAt?: string | null;
+  /** Identity/name of administrator who performed the deletion/archival */
+  deletedBy?: string | null;
+  /** Administrator remarks or justification for deleting/archiving the application */
+  deletedReason?: string | null;
+
   // 8. Timestamps
   /** Timestamp when application was officially submitted, or null if draft */
   submittedAt: string | null;
@@ -241,3 +251,4 @@ export interface VendorApplication {
   /** Timestamp of application record creation */
   createdAt?: string;
 }
+

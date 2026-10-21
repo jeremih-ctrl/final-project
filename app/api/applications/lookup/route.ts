@@ -22,7 +22,8 @@ export async function GET(req: Request) {
     }
 
     // Return sanitized public tracking data (excluding internal Clerk userId)
-    const { userId, ...sanitizedApplication } = application;
+    const sanitizedApplication = { ...application };
+    delete (sanitizedApplication as { userId?: string }).userId;
     return NextResponse.json({
       success: true,
       found: true,

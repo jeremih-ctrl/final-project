@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
+import { getPersistentApplicationByIdAsync } from "@/lib/server/vendor-applications-db";
 
 const ALLOWED_MIME_TYPES = new Set([
   "image/png",
@@ -23,6 +24,20 @@ export async function POST(req: Request) {
     const documentType = (formData.get("documentType") as string) || "Government ID";
     const applicationNumber = (formData.get("applicationNumber") as string) || "TEMP";
     const idNumber = (formData.get("idNumber") as string) || "";
+
+    // Ownership security guard: verify that the target application belongs to the authenticated user
+    if (applicationNumber && applicationNumber !== "TEMP") {
+      const targetApp = await getPersistentApplicationByIdAsync(applicationNumber);
+      if (targetApp) {
+        const ownerId = targetApp.userId || (targetApp as unknown as { clerkUserId?: string }).clerkUserId;
+        if (ownerId && ownerId !== userId) {
+          return NextResponse.json(
+            { error: "Forbidden: You do not have permission to upload documents for this application." },
+            { status: 403 }
+          );
+        }
+      }
+    }
 
     if (!file) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });

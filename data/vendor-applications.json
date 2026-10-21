@@ -1,34 +1,34 @@
 [
   {
-    "id": "BVR-2026-000003",
+    "id": "BVR-2026-001255",
     "owner": {
       "lastName": "",
       "firstName": "",
-      "ownerName": "Ma. Irish Relleta",
+      "ownerName": "Jeremy Maison",
       "middleName": ""
     },
     "status": "approved",
-    "userId": "user_3Kd0oEGh4eXYQXgVNWbZc4CKPkn",
+    "userId": "user_3Ku6tiZ6WmfzxEUzzUVrTmXwDvE",
     "address": {
       "city": "Butuan City",
       "region": "Caraga",
-      "street": "NEW ROAD NIGHT MARKET",
+      "street": "new road",
       "country": "Philippines",
-      "houseNo": "STALL 2-3",
-      "barangay": "Holy Redeemer Pob.",
+      "houseNo": "STALL 4-5",
+      "barangay": "Ampayon",
       "province": "Agusan del Norte"
     },
     "contact": {
-      "emailAddress": "miprelleta12@gmail.com",
-      "contactNumber": "09761547673"
+      "emailAddress": "j89638998@gmail.com",
+      "contactNumber": "09674382253"
     },
     "payment": {
       "status": "verified",
       "currency": "PHP",
       "amountPaid": 1450,
-      "verifiedAt": "2026-10-13T07:10:27.543Z",
-      "verifiedBy": "Admin (CBPLD Review Officer)",
-      "paymentDate": "2026-10-13T00:00:00.000Z",
+      "verifiedAt": "2026-10-21T00:04:36.733Z",
+      "verifiedBy": "Jeremy Gomez",
+      "paymentDate": null,
       "feeBreakdown": [
         {
           "id": "mayors-permit",
@@ -78,126 +78,323 @@
         }
       ],
       "paymentMethod": "GCash — Pay Online",
-      "receiptNumber": "CTO-OR-2026-0002",
+      "receiptNumber": "",
       "assessedAmount": 1450,
       "assessmentNotes": "Subject to annual Sanitary Inspection Fee by the City Health Office pursuant to the Sanitation Code and Butuan Revenue Code.",
       "gatewayProvider": "Maya (Butuan City E-TRACS Official Partner)",
-      "receiptFileSize": 245000,
-      "receiptFileType": "application/pdf",
-      "receiptFilename": "Official-Receipt-CTO-OR-2026-0002.pdf",
+      "receiptFileSize": 0,
+      "receiptFileType": "",
+      "receiptFilename": "",
       "rejectionReason": "",
       "assessmentStatus": "assessed",
-      "receiptUploadedAt": "2026-10-13T07:10:27.543Z",
-      "transactionReference": "PAY-BVR-2026-293409",
+      "receiptUploadedAt": null,
+      "transactionReference": "PAY-BVR-2026-977983",
       "paymentMethodCategory": "e_wallet"
     },
     "business": {
       "category": "Food & Refreshment / Eatery / Market Stall",
-      "businessName": "ULO SA TAO - BRANCH 2",
-      "businessDescription": "LAMI BASTA SA SULOD"
+      "businessName": "SABAWW",
+      "businessDescription": "LAMI KOO"
     },
-    "vendorId": "BUT-V-000002",
-    "createdAt": "2026-10-13T12:24:48.331Z",
+    "vendorId": "BUT-V-001255",
+    "createdAt": "2026-10-21T00:04:08.064Z",
+    "deletedAt": null,
+    "deletedBy": "",
     "documents": [
       {
-        "id": "09c7aaad-92b1-44a8-88fb-d0c417993aa6",
-        "idType": "Passport",
+        "id": "41043a79-dc9b-4eb7-bf38-359cbbfaafee",
+        "idType": "Driver's License",
         "status": "Submitted",
         "fileSize": "",
-        "filename": "Screenshot 2026-10-12 192243.png",
-        "idNumber": "56543456776",
-        "idFileName": "Screenshot 2026-10-12 192243.png",
-        "uploadedAt": "2026-10-13T12:24:48.331Z",
+        "filename": "Screenshot 2026-10-21 071419.png",
+        "idNumber": "4730471047141",
+        "idFileName": "Screenshot 2026-10-21 071419.png",
+        "uploadedAt": "2026-10-21T00:04:08.064Z",
         "isSkippedId": false,
         "storagePath": ""
       },
       {
-        "id": "b5c3868b-0b9b-443f-9501-714f42a2165d",
-        "idType": "Vendor Registration Payment Receipt",
-        "status": "Verified",
-        "fileSize": "",
-        "filename": "Vendor-Registration-Payment-Receipt-CTO-OR-2026-0002.pdf",
-        "idNumber": "CTO-OR-2026-0002",
-        "idFileName": "Vendor-Registration-Payment-Receipt-CTO-OR-2026-0002.pdf",
-        "uploadedAt": "2026-10-13T12:24:48.331Z",
-        "isSkippedId": false,
-        "storagePath": ""
-      },
-      {
-        "id": "6a264f25-f105-4abd-bac0-6ff44810c271",
-        "idType": "Passport",
+        "id": "281aa582-9569-4254-b77b-534d7263f62c",
+        "idType": "Driver's License",
         "status": "Submitted",
         "fileSize": "",
-        "filename": "Screenshot 2026-10-12 192243.png",
-        "idNumber": "56543456776",
-        "idFileName": "Screenshot 2026-10-12 192243.png",
-        "uploadedAt": "2026-10-13T12:25:53.800Z",
+        "filename": "Screenshot 2026-10-21 071419.png",
+        "idNumber": "4730471047141",
+        "idFileName": "Screenshot 2026-10-21 071419.png",
+        "uploadedAt": "2026-10-21T00:04:08.152Z",
         "isSkippedId": false,
         "storagePath": ""
       },
       {
-        "id": "afa128ae-4633-43fc-9901-22fabd55c932",
-        "idType": "Vendor Registration Payment Receipt",
-        "status": "Verified",
+        "id": "7b309857-cf06-46cc-b19e-53da75c0b3fc",
+        "idType": "Driver's License",
+        "status": "Submitted",
         "fileSize": "",
-        "filename": "Vendor-Registration-Payment-Receipt-CTO-OR-2026-0002.pdf",
-        "idNumber": "CTO-OR-2026-0002",
-        "idFileName": "Vendor-Registration-Payment-Receipt-CTO-OR-2026-0002.pdf",
-        "uploadedAt": "2026-10-13T12:25:53.800Z",
+        "filename": "Screenshot 2026-10-21 071419.png",
+        "idNumber": "4730471047141",
+        "idFileName": "Screenshot 2026-10-21 071419.png",
+        "uploadedAt": "2026-10-21T00:04:08.330Z",
+        "isSkippedId": false,
+        "storagePath": ""
+      },
+      {
+        "id": "8a8d531f-a461-421d-b771-d5df08198617",
+        "idType": "Driver's License",
+        "status": "Submitted",
+        "fileSize": "",
+        "filename": "Screenshot 2026-10-21 071419.png",
+        "idNumber": "4730471047141",
+        "idFileName": "Screenshot 2026-10-21 071419.png",
+        "uploadedAt": "2026-10-21T00:04:08.330Z",
         "isSkippedId": false,
         "storagePath": ""
       }
     ],
-    "updatedAt": "2026-10-14T02:35:36.285Z",
+    "isDeleted": false,
+    "updatedAt": "2026-10-21T00:04:55.092Z",
     "amountPaid": 1450,
     "isVerified": true,
     "certificate": {
       "status": "Active",
-      "issuedAt": "2026-10-14T02:35:36.795Z",
+      "issuedAt": "2026-10-21T00:04:54.863Z",
       "issuedBy": "City Business Permits and Licensing Department (CBPLD)",
-      "vendorId": "BUT-V-000002",
-      "expiresAt": "2027-10-14T02:35:36.795Z",
-      "ownerName": "Ma. Irish Relleta",
-      "businessName": "ULO SA TAO - BRANCH 2",
-      "certificateNumber": "CERT-2026-000003"
+      "vendorId": "BUT-V-001255",
+      "expiresAt": "2027-10-21T00:04:54.863Z",
+      "ownerName": "Jeremy Maison",
+      "businessName": "SABAWW",
+      "certificateNumber": "CERT-2026-001255"
     },
-    "submittedAt": "2026-10-13T12:24:48.331Z",
+    "submittedAt": "2026-10-21T00:04:08.064Z",
     "adminRemarks": "",
     "currentStage": 4,
+    "deletedReason": "",
     "paymentStatus": "verified",
     "statusHistory": [
       {
-        "id": "0a6ea0a0-0e60-480a-8524-ba7c35ff8e41",
+        "id": "c4c3fd92-ecb6-462e-a573-3b309e54fad5",
         "action": "Application Submitted",
         "remark": "Vendor registration submitted via online portal.",
         "actionBy": "Vendor",
         "newStatus": "submitted",
-        "timestamp": "2026-10-13T12:24:48.331Z",
+        "timestamp": "2026-10-21T00:04:08.064Z",
         "previousStatus": null
       },
       {
-        "id": "8ec3b4aa-88ce-4f04-9741-48575ad5c3cd",
+        "id": "d4f1c8e1-7dd7-44a7-8d73-79fcda4002f0",
         "action": "Status updated to approved",
         "remark": "",
         "actionBy": "Jeremy Gomez",
         "newStatus": "approved",
-        "timestamp": "2026-10-14T02:35:36.795Z",
+        "timestamp": "2026-10-21T00:04:54.863Z",
         "previousStatus": "submitted"
       },
       {
-        "id": "a1c8e501-059a-4a9d-857d-f3a594af8131",
+        "id": "90e20558-d9c3-4374-a7fd-114d2ebf41ca",
         "action": "Status updated to approved",
         "remark": "",
         "actionBy": "Jeremy Gomez",
         "newStatus": "approved",
-        "timestamp": "2026-10-14T02:35:36.828Z",
+        "timestamp": "2026-10-21T00:04:54.899Z",
         "previousStatus": "submitted"
       }
     ],
-    "verifiedEmail": "miprelleta12@gmail.com",
-    "applicationNumber": "BVR-2026-000003",
-    "verificationStatus": "Verified",
-    "actionBy": "Jeremy Gomez"
+    "verifiedEmail": "j89638998@gmail.com",
+    "applicationNumber": "BVR-2026-001255",
+    "verificationStatus": "Verified"
+  },
+  {
+    "id": "BVR-2026-001254",
+    "owner": {
+      "lastName": "",
+      "firstName": "",
+      "ownerName": "Jeremy Gwapoos",
+      "middleName": ""
+    },
+    "status": "approved",
+    "userId": "user_3KuD6ltstFpO4kpO28yZwFbNufT",
+    "address": {
+      "city": "Butuan City",
+      "region": "Caraga",
+      "street": "new road",
+      "country": "Philippines",
+      "houseNo": "STALL 3-5",
+      "barangay": "Ampayon",
+      "province": "Agusan del Norte"
+    },
+    "contact": {
+      "emailAddress": "j09193444@gmail.com",
+      "contactNumber": "09674382253"
+    },
+    "payment": {
+      "status": "verified",
+      "currency": "PHP",
+      "amountPaid": 1450,
+      "verifiedAt": "2026-10-20T23:59:29.669Z",
+      "verifiedBy": "Jeremy Gomez",
+      "paymentDate": null,
+      "feeBreakdown": [
+        {
+          "id": "mayors-permit",
+          "name": "Mayor's Permit / Local Business Registration",
+          "notes": "City Tax Ordinance No. 132 as amended",
+          "amount": 500,
+          "description": "City Business Permits and Licensing Department (CBPLD) municipal authorization",
+          "isRegulatory": true
+        },
+        {
+          "id": "barangay-clearance",
+          "name": "Barangay Clearance Regulatory Fee",
+          "notes": "RA 11032 Ease of Doing Business integration",
+          "amount": 100,
+          "description": "Consolidated barangay business clearance collected at City BOSS",
+          "isRegulatory": true
+        },
+        {
+          "id": "sanitary-inspection",
+          "name": "Sanitary Inspection & Health Clearance Fee",
+          "notes": "Mandatory for all food & beverage establishments",
+          "amount": 250,
+          "description": "City Health Office annual sanitation inspection and food handler regulatory fee",
+          "isRegulatory": true
+        },
+        {
+          "id": "zoning-clearance",
+          "name": "Zoning & Locational Clearance Fee",
+          "amount": 200,
+          "description": "City Planning & Development Office (CPDO) land use and stall zoning verification",
+          "isRegulatory": true
+        },
+        {
+          "id": "fire-safety-inspection",
+          "name": "Annual Fire Safety Inspection Fee (AFSIF)",
+          "notes": "BFP Fire Code of the Philippines compliance",
+          "amount": 200,
+          "description": "Bureau of Fire Protection (BFP) regulatory inspection assessment",
+          "isRegulatory": true
+        },
+        {
+          "id": "solid-waste-enro",
+          "name": "City Garbage & Solid Waste Environmental Fee",
+          "amount": 200,
+          "description": "City Environment & Natural Resources Office (ENRO) regulatory compliance fee",
+          "isRegulatory": true
+        }
+      ],
+      "paymentMethod": "GCash — Pay Online",
+      "receiptNumber": "",
+      "assessedAmount": 1450,
+      "assessmentNotes": "Subject to annual Sanitary Inspection Fee by the City Health Office pursuant to the Sanitation Code and Butuan Revenue Code.",
+      "gatewayProvider": "Maya (Butuan City E-TRACS Official Partner)",
+      "receiptFileSize": 0,
+      "receiptFileType": "",
+      "receiptFilename": "",
+      "rejectionReason": "",
+      "assessmentStatus": "assessed",
+      "receiptUploadedAt": null,
+      "transactionReference": "PAY-BVR-2026-362970",
+      "paymentMethodCategory": "e_wallet"
+    },
+    "business": {
+      "category": "Food & Refreshment / Eatery / Market Stall",
+      "businessName": "BONAKIDSS",
+      "businessDescription": "LAMI KOOOW"
+    },
+    "vendorId": "BUT-V-001254",
+    "createdAt": "2026-10-20T23:58:23.421Z",
+    "deletedAt": null,
+    "deletedBy": "",
+    "documents": [
+      {
+        "id": "a8513e13-25d0-4a83-93a6-14e4b76930b2",
+        "idType": "Driver's License",
+        "status": "Submitted",
+        "fileSize": "",
+        "filename": "Screenshot 2026-10-20 082656.png",
+        "idNumber": "4730471047141",
+        "idFileName": "Screenshot 2026-10-20 082656.png",
+        "uploadedAt": "2026-10-20T23:58:23.421Z",
+        "isSkippedId": false,
+        "storagePath": ""
+      },
+      {
+        "id": "c3c48bd3-260d-4851-9f0e-3f772fb0d5f2",
+        "idType": "Driver's License",
+        "status": "Submitted",
+        "fileSize": "",
+        "filename": "Screenshot 2026-10-20 082656.png",
+        "idNumber": "4730471047141",
+        "idFileName": "Screenshot 2026-10-20 082656.png",
+        "uploadedAt": "2026-10-20T23:58:23.480Z",
+        "isSkippedId": false,
+        "storagePath": ""
+      },
+      {
+        "id": "a196c6dc-a843-4ad7-9906-eab218dc92ee",
+        "idType": "Driver's License",
+        "status": "Submitted",
+        "fileSize": "",
+        "filename": "Screenshot 2026-10-20 082656.png",
+        "idNumber": "4730471047141",
+        "idFileName": "Screenshot 2026-10-20 082656.png",
+        "uploadedAt": "2026-10-20T23:58:23.688Z",
+        "isSkippedId": false,
+        "storagePath": ""
+      },
+      {
+        "id": "f4acffdf-c7f9-4b42-a8b6-c47a64aa5256",
+        "idType": "Driver's License",
+        "status": "Submitted",
+        "fileSize": "",
+        "filename": "Screenshot 2026-10-20 082656.png",
+        "idNumber": "4730471047141",
+        "idFileName": "Screenshot 2026-10-20 082656.png",
+        "uploadedAt": "2026-10-20T23:58:23.688Z",
+        "isSkippedId": false,
+        "storagePath": ""
+      }
+    ],
+    "isDeleted": false,
+    "updatedAt": "2026-10-20T23:59:39.240Z",
+    "amountPaid": 1450,
+    "isVerified": true,
+    "certificate": {
+      "status": "Active",
+      "issuedAt": "2026-10-20T23:59:38.975Z",
+      "issuedBy": "City Business Permits and Licensing Department (CBPLD)",
+      "vendorId": "BUT-V-001254",
+      "expiresAt": "2027-10-20T23:59:38.975Z",
+      "ownerName": "Jeremy Gwapoos",
+      "businessName": "BONAKIDSS",
+      "certificateNumber": "CERT-2026-001254"
+    },
+    "submittedAt": "2026-10-20T23:58:23.421Z",
+    "adminRemarks": "",
+    "currentStage": 4,
+    "deletedReason": "",
+    "paymentStatus": "verified",
+    "statusHistory": [
+      {
+        "id": "63394d00-3ed7-4e3c-b6d3-edc6724e16b8",
+        "action": "Application Submitted",
+        "remark": "Vendor registration submitted via online portal.",
+        "actionBy": "Vendor",
+        "newStatus": "submitted",
+        "timestamp": "2026-10-20T23:58:23.421Z",
+        "previousStatus": null
+      },
+      {
+        "id": "e4b39158-1ab0-4590-b959-ac7a554c5b73",
+        "action": "Status updated to approved",
+        "remark": "",
+        "actionBy": "Jeremy Gomez",
+        "newStatus": "approved",
+        "timestamp": "2026-10-20T23:59:38.975Z",
+        "previousStatus": "submitted"
+      }
+    ],
+    "verifiedEmail": "j09193444@gmail.com",
+    "applicationNumber": "BVR-2026-001254",
+    "verificationStatus": "Verified"
   },
   {
     "id": "BVR-2026-000002",
@@ -298,6 +495,8 @@
     },
     "vendorId": "BUT-V-000002",
     "createdAt": "2026-10-13T06:21:26.296Z",
+    "deletedAt": null,
+    "deletedBy": "",
     "documents": [
       {
         "id": "6c3835ee-cebe-4f60-9ce9-21846df5cce8",
@@ -324,7 +523,8 @@
         "storagePath": ""
       }
     ],
-    "updatedAt": "2026-10-13T11:01:23.141Z",
+    "isDeleted": false,
+    "updatedAt": "2026-10-19T04:14:52.162Z",
     "amountPaid": 1450,
     "isVerified": true,
     "certificate": {
@@ -340,6 +540,7 @@
     "submittedAt": "2026-10-13T06:21:25.178Z",
     "adminRemarks": "",
     "currentStage": 4,
+    "deletedReason": "",
     "paymentStatus": "verified",
     "statusHistory": [
       {

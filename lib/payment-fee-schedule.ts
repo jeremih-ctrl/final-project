@@ -7,7 +7,7 @@
  * the City Government of Butuan E-TRACS system.
  */
 
-import { FeeItem, PaymentInformation, PaymentStatus } from "./types/vendor-application";
+import { FeeItem, PaymentStatus } from "./types/vendor-application";
 
 // ─── Gateway Integration Configuration ────────────────────────────────────────
 

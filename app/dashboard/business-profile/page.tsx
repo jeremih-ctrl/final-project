@@ -25,85 +25,143 @@ import {
   Lock,
   Edit3,
   CheckCircle2,
-  ExternalLink,
   Info,
   ShieldCheck,
   Store,
   FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useSharedApplication } from "@/lib/vendor-application-state";
 import { updateApplication } from "@/lib/application-store";
+import { useAppRole } from "@/lib/clerk-roles";
+import { VendorApplication } from "@/lib/types/vendor-application";
+import {
+  useSharedApplication,
+  SharedApplication,
+  EMPTY_APPLICATION,
+} from "@/lib/vendor-application-state";
+import { useEffect } from "react";
 
 export default function BusinessProfilePage() {
-  const { application } = useSharedApplication();
+  const { user: clerkUser, isLoaded: isClerkLoaded, isSignedIn: isClerkSignedIn, email: clerkEmail } = useAppRole();
+  const { application: sharedApp } = useSharedApplication();
+
+  const isSharedOwned = Boolean(sharedApp.userId && clerkUser?.id && sharedApp.userId === clerkUser.id);
+  const application: SharedApplication = isSharedOwned ? sharedApp : EMPTY_APPLICATION;
+  const initialApp = isSharedOwned ? sharedApp : null;
 
   // 1. Business Info State
   const [businessInfo, setBusinessInfo] = useState({
-    businessName:
-      application.business?.businessName ||
-      application.vendor?.businessName ||
-      application.businessName ||
-      "",
-    ownerName:
-      application.vendor?.name ||
-      application.ownerName ||
-      "",
-    businessDescription:
-      application.business?.description ||
-      "",
+    businessName: initialApp?.business?.businessName || initialApp?.businessName || "",
+    ownerName: initialApp?.vendor?.name || initialApp?.ownerName || clerkUser?.fullName || "",
+    businessDescription: initialApp?.business?.description || "",
   });
   const [tempBusinessInfo, setTempBusinessInfo] = useState(businessInfo);
   const [businessDialogOpen, setBusinessDialogOpen] = useState(false);
 
   // 2. Contact Info State
   const [contactInfo, setContactInfo] = useState({
-    contactNumber:
-      application.vendor?.phone ||
-      application.contactNumber ||
-      "",
-    email:
-      application.vendor?.email ||
-      application.email ||
-      "",
+    contactNumber: initialApp?.vendor?.phone || initialApp?.contactNumber || "",
+    email: initialApp?.vendor?.email || initialApp?.email || clerkEmail || "",
   });
   const [tempContactInfo, setTempContactInfo] = useState(contactInfo);
   const [contactDialogOpen, setContactDialogOpen] = useState(false);
 
   // 3. Address Info State
   const [addressInfo, setAddressInfo] = useState({
-    houseNo:
-      application.business?.houseNumber ||
-      application.houseNumber ||
-      "",
-    street:
-      application.business?.street ||
-      application.street ||
-      "",
-    barangay:
-      application.business?.barangay ||
-      application.barangay ||
-      "",
+    houseNo: initialApp?.business?.houseNumber || initialApp?.houseNumber || "",
+    street: initialApp?.business?.street || initialApp?.street || "",
+    barangay: initialApp?.business?.barangay || initialApp?.barangay || "",
   });
   const [tempAddressInfo, setTempAddressInfo] = useState(addressInfo);
   const [addressDialogOpen, setAddressDialogOpen] = useState(false);
 
+  const [currentAppNumber, setCurrentAppNumber] = useState<string>(
+    initialApp?.applicationNumber || initialApp?.id || ""
+  );
+
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    if (!isClerkLoaded) return;
+    let cancelled = false;
+    (async () => {
+      await Promise.resolve();
+      if (cancelled) return;
+      if (!isClerkSignedIn || !clerkUser?.id) {
+        setIsLoading(false);
+        return;
+      }
+      try {
+        const res = await fetch("/api/vendor/application", { cache: "no-store" });
+        if (res.ok) {
+          const data = await res.json().catch(() => ({}));
+          const target: VendorApplication | undefined = data?.application;
+          if (
+            !cancelled &&
+            target &&
+            (target.userId === clerkUser.id || (target as unknown as { clerkUserId?: string }).clerkUserId === clerkUser.id)
+          ) {
+            const bName = target.business?.businessName || "";
+            const oName = target.owner?.ownerName || clerkUser.fullName || "";
+            const bDesc =
+              target.business?.businessDescription ||
+              (target.business as unknown as { description?: string })?.description ||
+              "";
+            const cPhone = target.contact?.contactNumber || "";
+            const cEmail = target.contact?.emailAddress || clerkEmail || "";
+            const hNo =
+              target.address?.houseNo ||
+              (target.address as unknown as { houseNumber?: string })?.houseNumber ||
+              "";
+            const str = target.address?.street || "";
+            const brgy = target.address?.barangay || "";
+
+            const newBiz = { businessName: bName, ownerName: oName, businessDescription: bDesc };
+            const newContact = { contactNumber: cPhone, email: cEmail };
+            const newAddr = { houseNo: hNo, street: str, barangay: brgy };
+
+            setBusinessInfo(newBiz);
+            setTempBusinessInfo(newBiz);
+            setContactInfo(newContact);
+            setTempContactInfo(newContact);
+            setAddressInfo(newAddr);
+            setTempAddressInfo(newAddr);
+            setCurrentAppNumber(target.applicationNumber || target.id || "");
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch application in business profile:", err);
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isClerkLoaded, isClerkSignedIn, clerkUser?.id, clerkUser?.fullName, clerkEmail]);
+
   // Notification feedback banner for local edits
   const [savedFeedback, setSavedFeedback] = useState<string | null>(null);
+
+  const targetAppNumber = currentAppNumber || (isSharedOwned ? (sharedApp.applicationNumber || sharedApp.id) : "");
 
   const handleSaveBusiness = (e: React.FormEvent) => {
     e.preventDefault();
     setBusinessInfo(tempBusinessInfo);
     setBusinessDialogOpen(false);
-    updateApplication(application.applicationNumber || application.id, {
-      business: {
-        businessName: tempBusinessInfo.businessName,
-        businessDescription: tempBusinessInfo.businessDescription,
-      },
-      owner: {
-        ownerName: tempBusinessInfo.ownerName,
-      },
-    });
+    if (targetAppNumber) {
+      updateApplication(targetAppNumber, {
+        business: {
+          businessName: tempBusinessInfo.businessName,
+          businessDescription: tempBusinessInfo.businessDescription,
+        },
+        owner: {
+          ownerName: tempBusinessInfo.ownerName,
+        },
+      });
+    }
     setSavedFeedback("Business information updated successfully.");
     setTimeout(() => setSavedFeedback(null), 4000);
   };
@@ -112,12 +170,14 @@ export default function BusinessProfilePage() {
     e.preventDefault();
     setContactInfo(tempContactInfo);
     setContactDialogOpen(false);
-    updateApplication(application.applicationNumber || application.id, {
-      contact: {
-        contactNumber: tempContactInfo.contactNumber,
-        emailAddress: tempContactInfo.email,
-      },
-    });
+    if (targetAppNumber) {
+      updateApplication(targetAppNumber, {
+        contact: {
+          contactNumber: tempContactInfo.contactNumber,
+          emailAddress: tempContactInfo.email,
+        },
+      });
+    }
     setSavedFeedback("Contact information updated successfully.");
     setTimeout(() => setSavedFeedback(null), 4000);
   };
@@ -126,13 +186,15 @@ export default function BusinessProfilePage() {
     e.preventDefault();
     setAddressInfo(tempAddressInfo);
     setAddressDialogOpen(false);
-    updateApplication(application.applicationNumber || application.id, {
-      address: {
-        houseNo: tempAddressInfo.houseNo,
-        street: tempAddressInfo.street,
-        barangay: tempAddressInfo.barangay,
-      },
-    });
+    if (targetAppNumber) {
+      updateApplication(targetAppNumber, {
+        address: {
+          houseNo: tempAddressInfo.houseNo,
+          street: tempAddressInfo.street,
+          barangay: tempAddressInfo.barangay,
+        },
+      });
+    }
     setSavedFeedback("Operating address updated successfully.");
     setTimeout(() => setSavedFeedback(null), 4000);
   };
@@ -145,9 +207,46 @@ export default function BusinessProfilePage() {
     country: "Philippines",
   };
 
-  const isApproved = application.status === "approved";
-  const isNeedsCorrection = application.status === "needs-correction";
-  const isRejected = application.status === "rejected";
+  const hasRealApp = isSharedOwned || Boolean(currentAppNumber) || Boolean(businessInfo.businessName);
+
+  if (isClerkLoaded && !isLoading && !hasRealApp) {
+    return (
+      <div className="py-12 px-4 max-w-xl mx-auto">
+        <Card className="bg-white border border-slate-200/90 rounded-2xl p-6 sm:p-8 text-center space-y-4 shadow-sm">
+          <div className="w-14 h-14 rounded-2xl bg-blue-50 border border-blue-200 text-blue-600 mx-auto flex items-center justify-center">
+            <Building2 className="w-7 h-7" />
+          </div>
+          <div className="space-y-1.5">
+            <Badge className="bg-blue-50 text-blue-700 border-blue-200 text-[11px] font-bold uppercase tracking-wider">
+              No Business Profile
+            </Badge>
+            <h2 className="text-xl font-bold text-slate-900">
+              No Registered Business Profile
+            </h2>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              No registered vendor application was found for your account. Register your business to establish your business profile and operate legally.
+            </p>
+          </div>
+          <div className="pt-2 flex justify-center">
+            <Link
+              href="/register?new=true"
+              className={cn(
+                buttonVariants({ variant: "default" }),
+                "bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs h-10 px-5 rounded-xl cursor-pointer shadow-xs gap-1.5 inline-flex items-center"
+              )}
+            >
+              Start Vendor Registration
+            </Link>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  const currentStatus = isSharedOwned ? sharedApp.status : "submitted";
+  const isApproved = currentStatus === "approved";
+  const isNeedsCorrection = currentStatus === "needs-correction";
+  const isRejected = currentStatus === "rejected";
 
   return (
     <div className="space-y-6 sm:space-y-8 max-w-6xl mx-auto">

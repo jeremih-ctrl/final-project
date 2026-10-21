@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -30,20 +30,75 @@ import {
   Printer,
   Landmark,
   Clock,
-  ShieldCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { addAdminNotification } from "@/lib/notifications-data";
-import { useSharedApplication } from "@/lib/vendor-application-state";
+import {
+  useSharedApplication,
+  normalizeToSharedApplication,
+  EMPTY_APPLICATION,
+  SharedApplication,
+} from "@/lib/vendor-application-state";
 import { updateApplication } from "@/lib/application-store";
 import { formatPhpCurrency } from "@/lib/payment-fee-schedule";
+import { useAppRole } from "@/lib/clerk-roles";
+import { VendorApplication } from "@/lib/types/vendor-application";
+import Link from "next/link";
+import { buttonVariants } from "@/components/ui/button";
 
 type DocStatus = "Submitted" | "Under Review" | "Accepted" | "Needs Replacement";
 
 export default function DocumentsPage() {
-  const { application } = useSharedApplication();
+  const { user: clerkUser, isLoaded: isClerkLoaded, isSignedIn: isClerkSignedIn } = useAppRole();
+  const { application: sharedApp } = useSharedApplication();
+
+  const [fetchedApp, setFetchedApp] = useState<VendorApplication | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    if (!isClerkLoaded || !isClerkSignedIn || !clerkUser?.id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/vendor/application", { cache: "no-store" });
+        if (res.ok) {
+          const data = await res.json().catch(() => ({}));
+          const target = data?.application;
+          if (
+            !cancelled &&
+            target &&
+            (target.userId === clerkUser.id || (target as unknown as { clerkUserId?: string }).clerkUserId === clerkUser.id)
+          ) {
+            setFetchedApp(target);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load vendor application in documents:", err);
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isClerkLoaded, isClerkSignedIn, clerkUser?.id]);
+
+  // Isolate application: strictly use authenticated user's application
+  const isSharedOwned = Boolean(sharedApp.userId && clerkUser?.id && sharedApp.userId === clerkUser.id);
+  const application: SharedApplication = fetchedApp
+    ? normalizeToSharedApplication(fetchedApp)
+    : isSharedOwned
+    ? sharedApp
+    : EMPTY_APPLICATION;
+
+  const hasRealApp = isSharedOwned || Boolean(fetchedApp);
+
   const primaryDoc = application.documents?.[0];
-  const applicantName = application.vendor?.name || application.ownerName || "Registered Vendor";
+  const applicantName =
+    application.vendor?.name ||
+    application.ownerName ||
+    clerkUser?.fullName ||
+    "Registered Vendor";
 
   // Payment Receipt Resolution
   const receiptFromDocs = application.documents?.find(
@@ -52,15 +107,15 @@ export default function DocumentsPage() {
   const paymentInfo = application.payment;
   const isPaymentVerified =
     paymentInfo?.status === "verified" ||
-    application.paymentStatus === "verified" ||
     receiptFromDocs?.status === "Verified";
 
-  const paymentStatus = paymentInfo?.status || application.paymentStatus || "unpaid";
+  const paymentStatus = paymentInfo?.status || "unpaid";
 
+  const appNum = application.applicationNumber || application.id || "";
   const orNumber =
     paymentInfo?.receiptNumber ||
     receiptFromDocs?.filename?.match(/CTO-OR-[0-9A-Z-]+/i)?.[0] ||
-    `CTO-OR-2026-${(application.applicationNumber || application.id || "001248").replace(/[^0-9]/g, "").slice(-4) || "0892"}`;
+    (appNum ? `CTO-OR-2026-${appNum.replace(/[^0-9]/g, "").slice(-4) || "0892"}` : "CTO-OR-PENDING");
 
   const receiptFilename =
     receiptFromDocs?.filename || `Vendor-Registration-Payment-Receipt-${orNumber}.pdf`;
@@ -78,24 +133,21 @@ export default function DocumentsPage() {
           day: "numeric",
           year: "numeric",
         })
-      : "October 12, 2026";
+      : "Pending Verification";
 
   const paymentMethod =
     paymentInfo?.paymentMethod ||
-    application.paymentMethod ||
-    "GCash — Pay Online";
+    "Official LGU Payment";
 
   const amountPaid =
     paymentInfo?.amountPaid ||
-    application.amountPaid ||
-    application.assessedAmount ||
-    2500;
+    paymentInfo?.assessedAmount ||
+    650;
 
   const transactionRef =
     paymentInfo?.transactionReference ||
-    application.transactionReference ||
-    application.applicationNumber ||
-    "BVR-2026-001248";
+    appNum ||
+    "Pending";
 
   const verifiedBy =
     paymentInfo?.verifiedBy || "City Treasurer's Office (CTO) / CBPLD";
@@ -114,7 +166,9 @@ export default function DocumentsPage() {
   const [docName, setDocName] = useState(
     primaryDoc?.filename || "government-id.pdf"
   );
-  const [submissionDate] = useState(primaryDoc?.uploadedAt || application.submittedDate || "Recently");
+  const [submissionDate] = useState(
+    primaryDoc?.uploadedAt || application.submittedDate || "Recently"
+  );
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [replaceDialogOpen, setReplaceDialogOpen] = useState(false);
 
@@ -197,6 +251,40 @@ export default function DocumentsPage() {
       setTimeout(() => setUploadSuccessMsg(null), 3000);
     }, 1000);
   };
+
+  if (!isLoading && !hasRealApp) {
+    return (
+      <div className="py-12 px-4 max-w-xl mx-auto">
+        <Card className="bg-white border border-slate-200/90 rounded-2xl p-6 sm:p-8 text-center space-y-4 shadow-sm">
+          <div className="w-14 h-14 rounded-2xl bg-blue-50 border border-blue-200 text-blue-600 mx-auto flex items-center justify-center">
+            <Files className="w-7 h-7" />
+          </div>
+          <div className="space-y-1.5">
+            <Badge className="bg-blue-50 text-blue-700 border-blue-200 text-[11px] font-bold uppercase tracking-wider">
+              No Application Documents
+            </Badge>
+            <h2 className="text-xl font-bold text-slate-900">
+              No Documents on File
+            </h2>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              No registered vendor application was found for your account. Register your business to upload and view your compliance documents.
+            </p>
+          </div>
+          <div className="pt-2 flex justify-center">
+            <Link
+              href="/register?new=true"
+              className={cn(
+                buttonVariants({ variant: "default" }),
+                "bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs h-10 px-5 rounded-xl cursor-pointer shadow-xs gap-1.5 inline-flex items-center"
+              )}
+            >
+              Start Vendor Registration
+            </Link>
+          </div>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 sm:space-y-8">

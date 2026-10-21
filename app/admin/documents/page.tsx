@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -52,9 +52,13 @@ import {
 import { cn } from "@/lib/utils";
 import {
   useStoredApplications,
+  useDeletedApplicationIds,
+  isDemoOrMockApplication,
+  createApplication,
   updateApplication,
 } from "@/lib/application-store";
 import { addVendorNotification } from "@/lib/notifications-data";
+import type { VendorApplication } from "@/lib/types/vendor-application";
 
 interface UnifiedDocumentRecord {
   id: string;
@@ -71,6 +75,23 @@ interface UnifiedDocumentRecord {
 
 export default function AdminDocumentsPage() {
   const storedApplications = useStoredApplications();
+  const deletedApplicationIds = useDeletedApplicationIds();
+
+  // Synchronize applications from server persistent database on mount
+  useEffect(() => {
+    fetch("/api/admin/applications", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.applications && Array.isArray(data.applications)) {
+          data.applications.forEach((app: VendorApplication) => {
+            createApplication(app);
+          });
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to load server applications for documents:", err);
+      });
+  }, []);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStatus, setSelectedStatus] = useState<string>("All");
@@ -91,11 +112,28 @@ export default function AdminDocumentsPage() {
     "Scanned document is unreadable or cropped. Please upload a clear, full-page photo or PDF copy."
   );
 
-  // Build unified document list solely from stored applications
+  // Build unified document list solely from genuine stored applications
   const allDocuments: UnifiedDocumentRecord[] = useMemo(() => {
     const list: UnifiedDocumentRecord[] = [];
+    const deletedSet = new Set(
+      deletedApplicationIds.map((id) => id.trim().toLowerCase())
+    );
 
-    storedApplications.forEach((app) => {
+    const isAppDeleted = (app: VendorApplication) => {
+      const normId = (app.id || "").trim().toLowerCase();
+      const normAppNum = (app.applicationNumber || "").trim().toLowerCase();
+      return (
+        Boolean(app.isDeleted) ||
+        (normId ? deletedSet.has(normId) : false) ||
+        (normAppNum ? deletedSet.has(normAppNum) : false)
+      );
+    };
+
+    const genuineStored = storedApplications.filter(
+      (app) => !isDemoOrMockApplication(app) && !isAppDeleted(app)
+    );
+
+    genuineStored.forEach((app) => {
       (app.documents || []).forEach((doc, idx) => {
         let docStatus: UnifiedDocumentRecord["status"] = "Submitted";
         if (doc.status === "Verified" || doc.status === "Accepted") {
@@ -123,7 +161,7 @@ export default function AdminDocumentsPage() {
     });
 
     return list;
-  }, [storedApplications]);
+  }, [storedApplications, deletedApplicationIds]);
 
   // Statistics
   const totalCount = allDocuments.length;

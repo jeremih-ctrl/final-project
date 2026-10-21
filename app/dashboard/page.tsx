@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -20,10 +20,14 @@ import {
   XCircle,
   CreditCard,
   Receipt,
+  PlusCircle,
+  Store,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useSharedApplication } from "@/lib/vendor-application-state";
+import { useSharedApplication, saveSharedApplication } from "@/lib/vendor-application-state";
 import { formatPhpCurrency, getPaymentStatusBadgeConfig } from "@/lib/payment-fee-schedule";
+import { useAppRole } from "@/lib/clerk-roles";
+import { VendorApplication } from "@/lib/types/vendor-application";
 
 export type DashboardStatus =
   | "draft"
@@ -35,69 +39,285 @@ export type DashboardStatus =
   | "rejected";
 
 export default function DashboardPage() {
+  const { user: clerkUser, isLoaded: isClerkLoaded, isSignedIn: isClerkSignedIn, email: clerkEmail } = useAppRole();
   const [copiedAppNumber, setCopiedAppNumber] = useState(false);
-  const { application, status } = useSharedApplication();
-  const demoStatus = status as DashboardStatus;
+  const { application: sharedApplication, status: sharedStatus } = useSharedApplication();
 
-  // Vendor Canonical Data from shared application
+  const [applications, setApplications] = useState<VendorApplication[]>([]);
+  const [selectedAppId, setSelectedAppId] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Clear application state immediately on user change
+  const [prevUserId, setPrevUserId] = useState(clerkUser?.id);
+  if (clerkUser?.id !== prevUserId) {
+    setPrevUserId(clerkUser?.id);
+    setApplications([]);
+    setSelectedAppId(null);
+  }
+
+  // Fetch all applications belonging to the signed-in vendor
+  const fetchUserApplications = useCallback(async () => {
+    if (!clerkUser?.id) return;
+    setIsLoading(true);
+    try {
+      const res = await fetch("/api/vendor/application", { cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        const rawList: VendorApplication[] = Array.isArray(data?.applications)
+          ? data.applications
+          : data?.application
+          ? [data.application]
+          : [];
+
+        // Strict vendor data isolation:
+        // Ensure every application strictly belongs to the currently authenticated Clerk user
+        const list = rawList.filter(
+          (app) => app.userId === clerkUser.id || (app as unknown as { clerkUserId?: string }).clerkUserId === clerkUser.id
+        );
+
+        setApplications(list);
+        if (list.length > 0) {
+          // Prefer active non-deleted application or first
+          const preferred = list.find((a) => !a.isDeleted) || list[0];
+          setSelectedAppId(preferred.applicationNumber || preferred.id);
+          saveSharedApplication(preferred);
+        } else {
+          setSelectedAppId(null);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch user applications in dashboard:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [clerkUser]);
+
+  useEffect(() => {
+    if (!isClerkLoaded || !isClerkSignedIn) return;
+    let isCancelled = false;
+    (async () => {
+      await Promise.resolve();
+      if (!isCancelled) {
+        fetchUserApplications();
+      }
+    })();
+    return () => {
+      isCancelled = true;
+    };
+  }, [isClerkLoaded, isClerkSignedIn, fetchUserApplications]);
+
+  // Resolve currently active application
+  const activeApp: VendorApplication | null = useMemo(() => {
+    if (applications.length === 0) return null;
+    if (selectedAppId) {
+      const match = applications.find(
+        (a) =>
+          a.id?.toLowerCase() === selectedAppId.toLowerCase() ||
+          a.applicationNumber?.toLowerCase() === selectedAppId.toLowerCase()
+      );
+      if (match) return match;
+    }
+    return applications.find((a) => !a.isDeleted) || applications[0];
+  }, [applications, selectedAppId]);
+
+  const isArchivedDeleted = Boolean(activeApp?.isDeleted);
+
+  // Status computation
+  const rawStatus = activeApp?.status || sharedStatus || "submitted";
+  const normStatus = rawStatus.toLowerCase().replace(/[\s_]+/g, "-");
+  const demoStatus: DashboardStatus =
+    isArchivedDeleted
+      ? "rejected"
+      : normStatus === "approved"
+      ? "approved"
+      : normStatus === "needs-correction"
+      ? "needs-correction"
+      : normStatus === "under-review"
+      ? "under-review"
+      : normStatus === "draft"
+      ? "draft"
+      : normStatus === "rejected"
+      ? "rejected"
+      : "submitted";
+
+  // Check whether sharedApplication belongs to the currently authenticated Clerk user
+  const isSharedOwned = Boolean(
+    sharedApplication.userId && clerkUser?.id && sharedApplication.userId === clerkUser.id
+  );
+
+  // Vendor Canonical Data
   const vendor = {
     businessName:
-      application.vendor?.businessName ||
-      application.businessName ||
-      "",
+      activeApp?.business?.businessName ||
+      (isSharedOwned ? (sharedApplication.vendor?.businessName || sharedApplication.businessName) : "") ||
+      "Registered Business",
     owner:
-      application.vendor?.name ||
-      application.ownerName ||
-      "",
+      activeApp?.owner?.ownerName ||
+      clerkUser?.fullName ||
+      (isSharedOwned ? (sharedApplication.vendor?.name || sharedApplication.ownerName) : "") ||
+      "Registered Vendor",
     applicationNumber:
-      application.id ||
-      application.applicationNumber ||
+      activeApp?.applicationNumber ||
+      activeApp?.id ||
+      (isSharedOwned ? (sharedApplication.applicationNumber || sharedApplication.id) : "") ||
       "",
     vendorId:
-      application.vendorId ||
-      (status === "approved" ? "Assigned upon release" : "Pending assignment"),
+      activeApp?.vendorId ||
+      (isSharedOwned ? sharedApplication.vendorId : "") ||
+      (demoStatus === "approved" ? "Assigned upon release" : "Pending assignment"),
     contactNumber:
-      application.vendor?.phone ||
-      application.contactNumber ||
+      activeApp?.contact?.contactNumber ||
+      (isSharedOwned ? (sharedApplication.vendor?.phone || sharedApplication.contactNumber) : "") ||
       "",
     email:
-      application.vendor?.email ||
-      application.email ||
+      activeApp?.contact?.emailAddress ||
+      clerkEmail ||
+      (isSharedOwned ? (sharedApplication.vendor?.email || sharedApplication.email) : "") ||
       "",
     address:
-      application.business?.address ||
-      application.street ||
+      activeApp?.address?.street ||
+      (isSharedOwned ? (sharedApplication.business?.address || sharedApplication.street) : "") ||
       "",
     barangay:
-      application.business?.barangay ||
-      application.barangay ||
+      activeApp?.address?.barangay ||
+      (isSharedOwned ? (sharedApplication.business?.barangay || sharedApplication.barangay) : "") ||
       "",
-    submittedDate: application.submittedDate || "Recently",
+    submittedDate: activeApp?.submittedAt
+      ? new Date(activeApp.submittedAt).toLocaleDateString("en-US", {
+          month: "long",
+          day: "numeric",
+          year: "numeric",
+        })
+      : isSharedOwned ? (sharedApplication.submittedDate || "Recently") : "Recently",
     jurisdiction: "City Government of Butuan, Agusan del Norte, Philippines",
   };
 
-  const isNeedsCorrection = demoStatus === "needs-correction";
-  const isApproved = demoStatus === "approved";
-  const isUnderReview = demoStatus === "under-review";
-  const isSubmitted = demoStatus === "submitted";
-  const isDraft = demoStatus === "draft";
-  const isRejected = demoStatus === "rejected";
+  const isNeedsCorrection = !isArchivedDeleted && demoStatus === "needs-correction";
+  const isApproved = !isArchivedDeleted && demoStatus === "approved";
+  const isUnderReview = !isArchivedDeleted && demoStatus === "under-review";
+  const isSubmitted = !isArchivedDeleted && demoStatus === "submitted";
+  const isDraft = !isArchivedDeleted && demoStatus === "draft";
+  const isRejected = isArchivedDeleted || demoStatus === "rejected";
 
-  const paymentInfo = application.payment;
+  const paymentInfo = activeApp?.payment || (isSharedOwned ? sharedApplication.payment : undefined);
   const paymentBadge = getPaymentStatusBadgeConfig(paymentInfo?.status || "unpaid");
   const assessedAmount = paymentInfo?.assessedAmount ?? 650;
   const amountPaid = paymentInfo?.amountPaid ?? 0;
 
   const handleCopyAppNumber = () => {
-    if (typeof navigator !== "undefined" && navigator.clipboard) {
+    if (typeof navigator !== "undefined" && navigator.clipboard && vendor.applicationNumber) {
       navigator.clipboard.writeText(vendor.applicationNumber);
       setCopiedAppNumber(true);
       setTimeout(() => setCopiedAppNumber(false), 2000);
     }
   };
 
+  // ─── EMPTY STATE: Authenticated Vendor with 0 Applications ──────────────────
+  if (!isLoading && applications.length === 0) {
+    return (
+      <div className="py-12 px-4 max-w-xl mx-auto space-y-6">
+        <Card className="bg-white border border-slate-200/90 rounded-2xl p-6 sm:p-8 text-center space-y-5 shadow-sm">
+          <div className="w-16 h-16 rounded-2xl bg-blue-50 border border-blue-200 text-blue-600 mx-auto flex items-center justify-center">
+            <Store className="w-8 h-8" />
+          </div>
+          <div className="space-y-2">
+            <Badge className="bg-blue-50 text-blue-700 border-blue-200 text-xs font-bold uppercase tracking-wider px-3 py-0.5">
+              No Application Found
+            </Badge>
+            <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">
+              Vendor Registration Required
+            </h1>
+            <p className="text-xs sm:text-sm text-slate-600 leading-relaxed max-w-md mx-auto">
+              You are signed in as <strong className="text-slate-900">{clerkEmail || clerkUser?.fullName || "Vendor"}</strong>. No active vendor applications were found under this account. Register your business to start operating legally in Butuan City.
+            </p>
+          </div>
+
+          <div className="pt-2 flex flex-col sm:flex-row gap-3 justify-center">
+            <Link
+              href="/register?new=true"
+              className={cn(
+                buttonVariants({ variant: "default" }),
+                "bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs h-10 px-5 rounded-xl cursor-pointer shadow-xs gap-2 inline-flex items-center"
+              )}
+            >
+              <Building2 className="w-4 h-4" />
+              <span>Register a Business</span>
+            </Link>
+            <Link
+              href="/application-status"
+              className={cn(
+                buttonVariants({ variant: "outline" }),
+                "text-xs font-semibold text-slate-700 h-10 px-4 rounded-xl"
+              )}
+            >
+              Track Application by Reference #
+            </Link>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 sm:space-y-8 max-w-6xl mx-auto">
+      {/* ─── Multi-Application Switcher (if user owns more than 1 application) ─── */}
+      {applications.length > 1 && (
+        <Card className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Store className="w-4 h-4 text-blue-600" />
+              <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                Your Registered Applications ({applications.length})
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {applications.map((app) => {
+                const appId = app.applicationNumber || app.id;
+                const isSelected = appId === selectedAppId;
+                const appIsDeleted = Boolean(app.isDeleted);
+                return (
+                  <button
+                    key={appId}
+                    type="button"
+                    onClick={() => {
+                      setSelectedAppId(appId);
+                      saveSharedApplication(app);
+                    }}
+                    className={cn(
+                      "px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer flex items-center gap-2",
+                      isSelected
+                        ? "bg-blue-600 text-white border-blue-600 shadow-xs ring-2 ring-blue-500/20"
+                        : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                    )}
+                  >
+                    <span className="font-mono">{appId}</span>
+                    <span className="opacity-75 font-normal">
+                      • {app.business?.businessName || "Business"}
+                    </span>
+                    {appIsDeleted ? (
+                      <span className="text-[10px] uppercase px-1.5 py-0.2 rounded font-extrabold bg-rose-600 text-white">
+                        Archived / Deleted
+                      </span>
+                    ) : (
+                      <span
+                        className={cn(
+                          "text-[10px] uppercase px-1.5 py-0.2 rounded font-bold",
+                          isSelected
+                            ? "bg-blue-700 text-white"
+                            : "bg-slate-200 text-slate-800"
+                        )}
+                      >
+                        {app.status || "Submitted"}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </Card>
+      )}
+
       {/* 1. Welcome Card */}
       <section
         aria-label="Welcome and operational summary"
@@ -119,15 +339,28 @@ export default function DashboardPage() {
               >
                 Local Enterprise
               </Badge>
-              {isNeedsCorrection && (
-                <Badge className="bg-orange-100 text-orange-950 border-orange-300 text-[11px] font-bold">
-                  ⚠ Action Required
-                </Badge>
-              )}
-              {isApproved && (
-                <Badge className="bg-emerald-100 text-emerald-900 border-emerald-300 text-[11px] font-bold">
-                  ✓ Accredited
-                </Badge>
+              {isArchivedDeleted ? (
+                <>
+                  <Badge className="bg-rose-600 text-white border-rose-700 text-[11px] font-bold">
+                    REJECTED
+                  </Badge>
+                  <Badge className="bg-rose-100 text-rose-900 border-rose-300 text-[11px] font-bold">
+                    DELETED BY ADMINISTRATOR
+                  </Badge>
+                </>
+              ) : (
+                <>
+                  {isNeedsCorrection && (
+                    <Badge className="bg-orange-100 text-orange-950 border-orange-300 text-[11px] font-bold">
+                      ⚠ Action Required
+                    </Badge>
+                  )}
+                  {isApproved && (
+                    <Badge className="bg-emerald-100 text-emerald-900 border-emerald-300 text-[11px] font-bold">
+                      ✓ Accredited
+                    </Badge>
+                  )}
+                </>
               )}
             </div>
 
@@ -139,6 +372,11 @@ export default function DashboardPage() {
                 <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 border border-emerald-300 text-emerald-900 font-bold text-xs sm:text-sm shadow-xs">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600 stroke-[2.5]" />
                   <span>[✓ VERIFIED]</span>
+                </span>
+              ) : isArchivedDeleted ? (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-100 border border-rose-300 text-rose-900 font-bold text-xs sm:text-sm">
+                  <XCircle className="w-4 h-4 text-rose-600" />
+                  <span>REJECTED (ARCHIVED)</span>
                 </span>
               ) : demoStatus === "rejected" ? (
                 <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 border border-slate-300 text-slate-800 font-bold text-xs sm:text-sm">
@@ -159,20 +397,31 @@ export default function DashboardPage() {
             </p>
           </div>
 
-          {/* Primary Actions: Track Application & Manage Documents */}
+          {/* Primary Actions: Send Another Application, My Application, Manage Documents */}
           <div className="flex flex-wrap items-center gap-2.5 self-start md:self-auto shrink-0">
             <Link
-              href="/dashboard/my-application"
+              href="/register?new=true"
+              className={cn(
+                buttonVariants({ variant: "default", size: "sm" }),
+                "text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white cursor-pointer gap-1.5 h-9 shadow-xs inline-flex items-center"
+              )}
+            >
+              <PlusCircle className="w-3.5 h-3.5" />
+              <span>Send Another Application</span>
+            </Link>
+
+            <Link
+              href={`/dashboard/my-application${activeApp ? `?appNumber=${activeApp.applicationNumber || activeApp.id}` : ""}`}
               className={cn(
                 buttonVariants({ variant: "outline", size: "sm" }),
                 "text-xs font-semibold text-slate-700 border-slate-300 hover:bg-slate-100 cursor-pointer gap-1.5 h-9"
               )}
             >
               <FileText className="w-3.5 h-3.5 text-slate-500" />
-              <span>My Application</span>
+              <span>My Applications</span>
             </Link>
 
-            {isNeedsCorrection ? (
+            {!isArchivedDeleted && isNeedsCorrection ? (
               <Link
                 href="/dashboard/my-application/correction"
                 className={cn(
@@ -183,21 +432,78 @@ export default function DashboardPage() {
                 <AlertTriangle className="w-3.5 h-3.5" />
                 <span>Correct Application</span>
               </Link>
-            ) : (
+            ) : !isArchivedDeleted ? (
               <Link
                 href="/dashboard/documents"
                 className={cn(
-                  buttonVariants({ variant: "default", size: "sm" }),
-                  "text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white cursor-pointer gap-1.5 h-9 shadow-xs"
+                  buttonVariants({ variant: "outline", size: "sm" }),
+                  "text-xs font-semibold text-slate-700 border-slate-300 hover:bg-slate-100 cursor-pointer gap-1.5 h-9"
                 )}
               >
                 <Files className="w-3.5 h-3.5" />
                 <span>Manage Documents</span>
               </Link>
-            )}
+            ) : null}
           </div>
         </div>
       </section>
+
+      {/* ─── 1b. Deleted by Administrator Notice Banner ─── */}
+      {isArchivedDeleted && (
+        <section
+          aria-label="Application deleted by administrator notice"
+          className="rounded-2xl bg-rose-50/95 border-2 border-rose-300 p-5 sm:p-6 shadow-xs space-y-4"
+        >
+          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+            <div className="flex items-start gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 border border-rose-300 text-rose-700 flex items-center justify-center shrink-0 mt-0.5">
+                <XCircle className="w-5 h-5 stroke-[2.5]" />
+              </div>
+              <div className="space-y-1.5 min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge className="bg-rose-600 text-white border-rose-700 text-xs font-extrabold uppercase px-2.5 py-0.5">
+                    REJECTED
+                  </Badge>
+                  <Badge className="bg-rose-100 text-rose-900 border-rose-300 text-xs font-bold uppercase px-2.5 py-0.5">
+                    APPLICATION HAS BEEN DELETED BY THE ADMINISTRATOR
+                  </Badge>
+                  {activeApp?.deletedAt && (
+                    <span className="text-xs text-rose-800 font-medium">
+                      Archived on {new Date(activeApp.deletedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                    </span>
+                  )}
+                </div>
+                <h2 className="text-base sm:text-lg font-bold text-rose-950">
+                  This application was rejected and archived by the Administrator
+                </h2>
+                <p className="text-xs sm:text-sm text-rose-900 leading-relaxed max-w-3xl">
+                  {activeApp?.deletedReason || activeApp?.adminRemarks ? (
+                    <>
+                      Administrative Remarks: <strong className="font-semibold">&ldquo;{activeApp.deletedReason || activeApp.adminRemarks}&rdquo;</strong>
+                    </>
+                  ) : (
+                    "This rejected application has been archived by the administrator. Historical records remain preserved in read-only mode for audit. The vendor may submit a separate new application."
+                  )}
+                </p>
+                <p className="text-xs text-rose-800/90 pt-1">
+                  Reference: <strong className="font-mono text-rose-950">{vendor.applicationNumber}</strong> • This archived application cannot be edited or resubmitted.
+                </p>
+              </div>
+            </div>
+
+            <Link
+              href="/register?new=true"
+              className={cn(
+                buttonVariants({ variant: "default", size: "default" }),
+                "bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm cursor-pointer gap-2 shrink-0 self-start sm:self-center shadow-xs inline-flex items-center"
+              )}
+            >
+              <PlusCircle className="w-4 h-4" />
+              <span>Send Another Application</span>
+            </Link>
+          </div>
+        </section>
+      )}
 
       {/* 2. Application Approval / Verification / Priority Banners (Only when supported by records) */}
       {/* 2a. Payment Rejection Notice */}
@@ -445,7 +751,7 @@ export default function DashboardPage() {
                   Your application requires corrections before it can be approved
                 </h2>
                 <p className="text-xs sm:text-sm text-orange-900 leading-relaxed max-w-3xl">
-                  Administrator Remarks: &ldquo;{application.adminRemarks || "Please provide updated application details and replacement documents."}&rdquo;
+                  Administrator Remarks: &ldquo;{activeApp?.adminRemarks || "Please provide updated application details and replacement documents."}&rdquo;
                 </p>
               </div>
             </div>
@@ -481,14 +787,20 @@ export default function DashboardPage() {
                     Application Not Approved
                   </span>
                   <span className="text-xs text-rose-800 font-medium">
-                    {application.lastUpdatedText || "Evaluation Concluded"}
+                    {activeApp?.updatedAt
+                      ? new Date(activeApp.updatedAt).toLocaleDateString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                          year: "numeric",
+                        })
+                      : "Evaluation Concluded"}
                   </span>
                 </div>
                 <h2 className="text-base sm:text-lg font-bold text-rose-950">
                   Application Not Approved
                 </h2>
                 <p className="text-xs sm:text-sm text-rose-900 leading-relaxed max-w-3xl">
-                  Administrator Remarks: &ldquo;{application.adminRemarks || "Application did not meet municipal licensing or zoning criteria."}&rdquo;
+                  Administrator Remarks: &ldquo;{activeApp?.adminRemarks || "Application did not meet municipal licensing or zoning criteria."}&rdquo;
                 </p>
               </div>
             </div>

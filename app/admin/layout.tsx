@@ -48,7 +48,6 @@ function AdminSidebar({ pathname, onNavigate, onLogout }: AdminSidebarProps) {
       href: "/admin/applications",
       icon: FileCheck2,
       active: pathname.startsWith("/admin/applications"),
-      badge: "84",
     },
     {
       label: "Vendors",
@@ -186,8 +185,9 @@ export default function AdminLayout({
   const pathname = usePathname();
   const router = useRouter();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const { session, isLoading: isLocalLoading } = useAdminAuth();
+  const { session } = useAdminAuth();
   const { signOut } = useClerk();
+  const { unreadCount } = useAdminNotifications();
 
   const handleAdminLogout = async () => {
     clearAdminSession();
@@ -401,10 +401,14 @@ export default function AdminLayout({
             <Link
               href="/admin/notifications"
               className="relative p-2 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
-              aria-label="View admin notifications"
+              aria-label={`View admin notifications (${unreadCount} unread)`}
             >
               <Bell className="w-5 h-5" />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-blue-600 ring-2 ring-white" />
+              {unreadCount > 0 && (
+                <span className="absolute top-1.5 right-1.5 flex h-2 w-2">
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-600 ring-2 ring-white" />
+                </span>
+              )}
             </Link>
 
             <Separator orientation="vertical" className="h-6 hidden sm:block" />

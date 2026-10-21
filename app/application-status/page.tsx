@@ -323,9 +323,10 @@ function ApplicationStatusContent() {
   const backLabel = isAuthenticated ? "Back to Dashboard" : "Back to Home";
   const backShortLabel = isAuthenticated ? "Dashboard" : "Home";
 
+  const queryFromUrl = searchParams?.get("appNumber") || searchParams?.get("number") || searchParams?.get("id") || "";
   const [copied, setCopied] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [activeAppId, setActiveAppId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState(queryFromUrl);
+  const [activeAppId, setActiveAppId] = useState<string | null>(queryFromUrl || null);
   const [isSearching, setIsSearching] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [lookupError, setLookupError] = useState<string | null>(null);
@@ -333,7 +334,6 @@ function ApplicationStatusContent() {
   // Payment proof resubmission and preview state
   const [resubmitModalOpen, setResubmitModalOpen] = useState(false);
   const [viewReceiptModalOpen, setViewReceiptModalOpen] = useState(false);
-  const [resubmitFile, setResubmitFile] = useState<File | null>(null);
   const [resubmitFileDataUrl, setResubmitFileDataUrl] = useState<string | null>(null);
   const [resubmitFilename, setResubmitFilename] = useState<string>("");
   const [resubmitFileType, setResubmitFileType] = useState<string>("");
@@ -342,7 +342,7 @@ function ApplicationStatusContent() {
   const [resubmitMethodName, setResubmitMethodName] = useState("Maya / GCash (Official E-Wallet)");
   const [resubmitTxRef, setResubmitTxRef] = useState("");
   const [resubmitAmountPaid, setResubmitAmountPaid] = useState("");
-  const [resubmitPaymentDate, setResubmitPaymentDate] = useState("");
+  const resubmitPaymentDate = "";
   const [resubmitFileError, setResubmitFileError] = useState<string | null>(null);
   const [resubmitSuccessMessage, setResubmitSuccessMessage] = useState<string | null>(null);
   const [isSubmittingProof, setIsSubmittingProof] = useState(false);
@@ -365,7 +365,6 @@ function ApplicationStatusContent() {
       return;
     }
 
-    setResubmitFile(file);
     setResubmitFilename(file.name);
     setResubmitFileType(file.type || (isPdf ? "application/pdf" : "image/jpeg"));
     setResubmitFileSize(file.size);
@@ -641,7 +640,7 @@ function ApplicationStatusContent() {
         const data = await res.json().catch(() => ({}));
         if (data?.application) {
           const app = data.application;
-          createApplication(app as any);
+          createApplication(app as VendorApplication);
           setActiveAppId(app.applicationNumber || app.id);
           setLookupError(null);
           setSearchOpen(false);
@@ -2249,7 +2248,6 @@ function ApplicationStatusContent() {
                     <button
                       type="button"
                       onClick={() => {
-                        setResubmitFile(null);
                         setResubmitFileDataUrl(null);
                         setResubmitFilename("");
                         setResubmitFileType("");

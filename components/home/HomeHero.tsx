@@ -10,8 +10,13 @@ import { HeadingReveal } from "./HeadingReveal";
 import { HomeFeatures } from "./HomeFeatures";
 import { HomeHeroStatusCard } from "./HomeHeroStatusCard";
 import { ShinyText } from "@/components/reactbits/ShinyText";
+import { PublicOverviewStatistics } from "@/lib/public-analytics";
 
-export function HomeHero() {
+interface HomeHeroProps {
+  initialStats?: PublicOverviewStatistics | null;
+}
+
+export function HomeHero({ initialStats }: HomeHeroProps = {}) {
   return (
     <section className="relative overflow-hidden pt-10 pb-12 sm:pt-12 sm:pb-14 lg:pt-14 lg:pb-16 bg-white border-b border-slate-200/80">
       {/* ─── 1. React Bits / OGL Interactive Waves Civic Background ─── */}
@@ -95,7 +100,7 @@ export function HomeHero() {
 
           {/* ─── Right Side: React Bits 3D Tilted Status Preview Card ─── */}
           <div className="lg:col-span-5 xl:col-span-5 flex items-center justify-center relative">
-            <HomeHeroStatusCard />
+            <HomeHeroStatusCard initialStats={initialStats} />
           </div>
 
         </div>

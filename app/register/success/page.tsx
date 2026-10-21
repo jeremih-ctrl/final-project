@@ -13,11 +13,9 @@ import {
   Home,
   Store,
   Clock,
-  ShieldCheck,
   FileText,
   Receipt,
   LayoutDashboard,
-  AlertTriangle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getApplications, getApplication } from "@/lib/application-store";

@@ -15,9 +15,11 @@ export default function SSOCallbackPage() {
         </div>
       </div>
       <AuthenticateWithRedirectCallback
-        signInForceRedirectUrl="/register"
-        signUpForceRedirectUrl="/register"
-        continueSignUpUrl="/register"
+        signInForceRedirectUrl="/auth-redirect"
+        signInFallbackRedirectUrl="/auth-redirect"
+        signUpForceRedirectUrl="/auth-redirect"
+        signUpFallbackRedirectUrl="/auth-redirect"
+        continueSignUpUrl="/auth-redirect"
       />
     </div>
   );

@@ -17,19 +17,14 @@ import {
   Clock,
   Eye,
   CheckSquare,
-  RotateCcw,
   AlertTriangle,
   Info,
   Lock,
   Stamp,
   Award,
-  Sparkles,
   Trash2,
   Receipt,
-  Wallet,
   Download,
-  ExternalLink,
-  FileCheck,
   ShieldCheck,
   Landmark,
   Loader2,
@@ -61,10 +56,9 @@ import {
   getApplication,
   updateApplication,
   useDeletedApplicationIds,
-  undeleteAdminApplicationRecord,
   deleteAdminApplicationRecord,
+  permanentlyDeleteApplication,
 } from "@/lib/application-store";
-import { type AdminApplication } from "@/lib/admin-applications-data";
 import { VendorApplication, ApplicationStatus, PaymentInformation } from "@/lib/types/vendor-application";
 import {
   addVendorNotification,
@@ -170,67 +164,6 @@ function parseAppStatus(status?: string): ApplicationStatus {
   if (s === "under_review") return "under_review";
   if (s === "draft") return "draft";
   return "submitted";
-}
-
-function convertMockToVendorApp(mock: AdminApplication): VendorApplication {
-  const statusLower: ApplicationStatus = parseAppStatus(mock.status);
-  return {
-    id: mock.id,
-    applicationNumber: mock.id,
-    vendorId: mock.vendorId,
-    status: statusLower,
-    verificationStatus:
-      mock.status === "Approved"
-        ? "Verified"
-        : mock.status === "Rejected"
-        ? "Not Verified"
-        : "Pending",
-    isVerified: mock.status === "Approved",
-    currentStage:
-      mock.status === "Approved" ? 4 : mock.status === "Submitted" ? 1 : 2,
-    business: {
-      businessName: mock.businessName,
-      businessDescription: mock.businessDescription,
-    },
-    owner: {
-      ownerName: mock.owner,
-    },
-    contact: {
-      contactNumber: mock.contactNumber,
-      emailAddress: mock.email,
-    },
-    address: {
-      houseNo: mock.address.houseNumber,
-      street: mock.address.street,
-      barangay: mock.barangay,
-      city: mock.address.city,
-      province: mock.address.province,
-      region: mock.address.region,
-      country: mock.address.country,
-    },
-    documents: mock.governmentId
-      ? [
-          {
-            id: `doc-${mock.id}`,
-            filename: mock.governmentId.filename,
-            idType: mock.governmentId.idType,
-            uploadedAt: mock.governmentId.uploadedAt,
-            status: mock.governmentId.status,
-          },
-        ]
-      : [],
-    adminRemarks: mock.remarks,
-    statusHistory: (mock.activityTimeline || []).map((item) => ({
-      id: item.id,
-      previousStatus: null,
-      newStatus: statusLower,
-      timestamp: item.date,
-      action: item.title,
-      remark: item.description,
-    })),
-    submittedAt: mock.submitted,
-    updatedAt: mock.submitted,
-  };
 }
 
 function mapVendorAppToReviewState(
@@ -445,17 +378,6 @@ function createEmptyReviewState(appId: string): ReviewApplicationState {
   };
 }
 
-// Initial state factory function
-function createInitialApplicationState(
-  appId: string
-): ReviewApplicationState | null {
-  const stored = typeof window !== "undefined" ? getApplication(appId) : null;
-  if (stored) {
-    return mapVendorAppToReviewState(stored);
-  }
-  return null;
-}
-
 interface PageProps {
   params: Promise<{ id: string }>;
 }
@@ -497,20 +419,27 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
     return null;
   }, [storedApplications, applicationId]);
 
-  // Is explicitly marked as deleted by an Admin action?
+  // Is explicitly marked as archived/deleted?
   const isDeleted = useMemo(() => {
-    // If the application exists in active localStorage, it is NEVER deleted!
-    if (activeApp) return false;
+    if (activeApp?.isDeleted) return true;
     const norm = applicationId.toLowerCase();
     return deletedApplicationIds.some((id) => id.trim().toLowerCase() === norm);
   }, [activeApp, deletedApplicationIds, applicationId]);
 
-  // If the active application was in deleted list, undelete it immediately
+  // Synchronize application details from server if needed
   useEffect(() => {
-    if (activeApp) {
-      undeleteAdminApplicationRecord(activeApp.id);
-    }
-  }, [activeApp]);
+    if (!applicationId) return;
+    fetch(`/api/admin/applications/${encodeURIComponent(applicationId)}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.application) {
+          updateApplication(data.application.applicationNumber || data.application.id, data.application);
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to fetch application details from server:", err);
+      });
+  }, [applicationId]);
 
   // Base review state computed directly from the resolved active application
   const baseReviewState: ReviewApplicationState | null = useMemo(() => {
@@ -674,6 +603,10 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
   const [correctionDialogOpen, setCorrectionDialogOpen] = useState(false);
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteReason, setDeleteReason] = useState("Application record archived and deleted by administrator");
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [permanentDeleteDialogOpen, setPermanentDeleteDialogOpen] = useState(false);
+  const [isPermanentDeleting, setIsPermanentDeleting] = useState(false);
   const [docPreviewOpen, setDocPreviewOpen] = useState(false);
 
   const [correctionInput, setCorrectionInput] = useState(
@@ -1273,14 +1206,72 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
   };
 
   // Delete handler for applications
-  const handleDeleteConfirm = () => {
+  const handleDeleteConfirm = async () => {
+    setIsDeleting(true);
+    try {
+      await fetch(`/api/admin/applications/${encodeURIComponent(appState.applicationNumber)}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: deleteReason }),
+      });
+    } catch (e) {
+      console.error("Failed to archive application on server:", e);
+    } finally {
+      setIsDeleting(false);
+    }
+
     deleteAdminApplicationRecord(appState.applicationNumber);
     setDeleteDialogOpen(false);
     router.push("/admin/applications");
   };
 
+  const handlePermanentDeleteConfirm = async () => {
+    setIsPermanentDeleting(true);
+    try {
+      const res = await fetch(
+        `/api/admin/applications/${encodeURIComponent(appState.applicationNumber)}?permanent=true`,
+        {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ permanent: true }),
+        }
+      );
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData?.error || `Server returned status ${res.status}`);
+      }
+
+      permanentlyDeleteApplication(appState.applicationNumber);
+      setPermanentDeleteDialogOpen(false);
+      router.push("/admin/applications");
+    } catch (e) {
+      console.error("Failed to permanently delete application:", e);
+      showNotification(
+        `Failed to permanently delete application: ${e instanceof Error ? e.message : "Unknown error occurred"}`,
+        "destructive"
+      );
+    } finally {
+      setIsPermanentDeleting(false);
+    }
+  };
+
   // Status Styling Badge
   const getHeaderStatusBadge = () => {
+    if (isDeleted) {
+      return (
+        <div className="flex items-center gap-2 flex-wrap">
+          <Badge className="bg-slate-200 text-slate-900 border-slate-400 text-xs font-bold px-3 py-1">
+            <XCircle className="w-3.5 h-3.5 mr-1 text-slate-700" />
+            Rejected
+          </Badge>
+          <Badge className="bg-slate-900 text-white border-slate-800 text-xs font-bold px-3 py-1">
+            <Trash2 className="w-3.5 h-3.5 mr-1 text-slate-400" />
+            Archived / Deleted by Administrator
+          </Badge>
+        </div>
+      );
+    }
+
     switch (appState.status) {
       case "Approved":
         return (
@@ -1332,48 +1323,6 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
         );
     }
   };
-
-  if (isDeleted) {
-    return (
-      <div className="space-y-6 pb-12">
-        <div className="flex items-center gap-2 text-xs text-slate-500 bg-white p-4 rounded-xl border border-slate-200">
-          <Link
-            href="/admin/applications"
-            className="text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1 font-medium"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            <span>Back to Applications</span>
-          </Link>
-          <span>/</span>
-          <span className="font-mono text-slate-700">{applicationId}</span>
-        </div>
-
-        <div className="bg-white p-8 rounded-2xl border border-slate-200 text-center space-y-4 max-w-lg mx-auto mt-8 shadow-xs">
-          <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto">
-            <Trash2 className="w-6 h-6" />
-          </div>
-          <div>
-            <h2 className="text-lg font-bold text-slate-900">Application Deleted</h2>
-            <p className="text-xs sm:text-sm text-slate-500 mt-1">
-              Application <span className="font-mono font-bold text-slate-700">{applicationId}</span> was removed from the active application list.
-            </p>
-          </div>
-          <div className="flex items-center justify-center gap-3 pt-2">
-            <Link
-              href="/admin/applications"
-              className={cn(
-                buttonVariants({ variant: "outline", size: "sm" }),
-                "rounded-xl text-xs font-semibold cursor-pointer"
-              )}
-            >
-              <ArrowLeft className="w-3.5 h-3.5 mr-1.5" />
-              Back to Applications
-            </Link>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   if (!activeApp) {
     return (
@@ -1456,6 +1405,45 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
           </p>
         </div>
       </div>
+
+      {/* Soft-Deleted / Archived Banner */}
+      {isDeleted && (
+        <div className="p-5 rounded-2xl bg-amber-50/90 border border-amber-300 text-amber-950 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0 mt-0.5">
+              <AlertTriangle className="w-5 h-5 text-amber-700" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-sm text-amber-900 tracking-wide uppercase">
+                  APPLICATION HAS BEEN DELETED BY THE ADMINISTRATOR
+                </span>
+                <Badge className="bg-slate-900 text-white text-[10px] font-semibold border-slate-800">
+                  Read-Only Archive
+                </Badge>
+              </div>
+              <p className="text-xs text-amber-800 mt-1">
+                This application was rejected and archived. All historical records, reference numbers, and review notes are retained in read-only mode for audit purposes.
+                {activeApp?.deletedAt && ` (Archived on ${new Date(activeApp.deletedAt).toLocaleDateString()})`}
+                {activeApp?.deletedReason && ` Reason: "${activeApp.deletedReason}"`}
+              </p>
+            </div>
+          </div>
+
+          <div className="shrink-0 flex items-center gap-2 self-end sm:self-center">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setPermanentDeleteDialogOpen(true)}
+              className="h-9 px-3.5 text-xs font-semibold text-rose-700 border-rose-300 bg-white hover:bg-rose-600 hover:text-white cursor-pointer gap-1.5 rounded-xl shadow-2xs transition-colors"
+            >
+              <Trash2 className="w-4 h-4 text-rose-600 group-hover:text-white" />
+              <span>Permanently Delete</span>
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* 11. Clear User Feedback Notification */}
       {feedbackNotice && (
@@ -1639,7 +1627,12 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
 
             {/* 10, 12. Top Action Controls synchronized with status */}
             <div className="flex flex-wrap items-center gap-2.5 shrink-0 pt-2 lg:pt-0">
-              {appState.status === "Under Review" ||
+              {isDeleted ? (
+                <div className="px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-800 text-white text-xs font-bold flex items-center gap-2 shadow-2xs">
+                  <Trash2 className="w-4 h-4 text-slate-400" />
+                  <span>Archived / Deleted by Administrator</span>
+                </div>
+              ) : appState.status === "Under Review" ||
               appState.status === "Submitted" ||
               appState.status === "Correction Submitted" ? (
                 <>
@@ -3079,8 +3072,8 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
             </CardContent>
           </Card>
 
-          {/* Danger Zone Card (Requirement 6 - shown only when status is Rejected) */}
-          {appState.status === "Rejected" && (
+          {/* Danger Zone Card (Requirement 6 - shown only when status is Rejected and not already deleted) */}
+          {!isDeleted && appState.status === "Rejected" && (
             <Card className="bg-rose-50/40 border border-rose-300 rounded-2xl shadow-xs overflow-hidden">
               <CardHeader className="p-5 pb-3 border-b border-rose-100 flex flex-row items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -3099,10 +3092,10 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
               <CardContent className="p-5 space-y-3">
                 <div>
                   <h4 className="text-sm font-bold text-slate-900">
-                    Delete Rejected Application
+                    Archive / Delete Rejected Application
                   </h4>
                   <p className="text-xs text-slate-600 mt-1 leading-relaxed">
-                    Permanently delete this rejected application from the records. Once deleted, this application will be removed from the current application list and cannot be undone.
+                    Safely archive and delete this rejected application. Historical records, reference numbers, and review notes are retained in read-only audit history, while removing the application from active queues.
                   </p>
                 </div>
 
@@ -3113,7 +3106,7 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
                     className="w-full h-10 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs sm:text-sm cursor-pointer gap-2 rounded-xl shadow-xs"
                   >
                     <Trash2 className="w-4 h-4" />
-                    <span>Delete Application</span>
+                    <span>Archive / Delete Application</span>
                   </Button>
                 </div>
               </CardContent>
@@ -3543,18 +3536,18 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
               <Trash2 className="w-5 h-5 text-rose-600" />
             </div>
             <DialogTitle className="text-lg font-bold text-slate-900">
-              Delete this application?
+              Archive & Delete Application
             </DialogTitle>
             <DialogDescription className="text-xs sm:text-sm text-slate-600 leading-relaxed">
-              Are you sure you want to delete application{" "}
+              Are you sure you want to archive application{" "}
               <span className="font-mono font-bold text-slate-900">
                 {appState.applicationNumber}
               </span>
-              ? This application will be removed from the current application list and this action cannot be undone.
+              ? Historical records, reference numbers, and review notes will be retained in read-only audit history, while safely removing the application from active queues.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="py-2">
+          <div className="py-2 space-y-3">
             <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/90 text-xs sm:text-sm space-y-1.5">
               <div className="flex items-center justify-between">
                 <span className="text-slate-500">Business Name:</span>
@@ -3572,12 +3565,25 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
                 </Badge>
               </div>
             </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Reason for Deletion / Archival (Audit Trail):
+              </label>
+              <Input
+                value={deleteReason}
+                onChange={(e) => setDeleteReason(e.target.value)}
+                placeholder="e.g., Application rejected; duplicate entry or withdrawn by vendor"
+                className="text-xs h-9"
+              />
+            </div>
           </div>
 
           <DialogFooter className="gap-2 sm:gap-0 pt-2">
             <Button
               type="button"
               variant="outline"
+              disabled={isDeleting}
               onClick={() => setDeleteDialogOpen(false)}
               className="text-xs font-semibold rounded-xl h-9"
             >
@@ -3585,14 +3591,105 @@ export default function AdminApplicationReviewPage({ params }: PageProps) {
             </Button>
             <Button
               type="button"
+              disabled={isDeleting}
               onClick={handleDeleteConfirm}
               className="text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white rounded-xl h-9 cursor-pointer"
             >
-              Delete Application
+              {isDeleting ? "Archiving..." : "Archive & Delete"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ================= PERMANENT DELETE CONFIRMATION DIALOG ================= */}
+      <Dialog
+        open={permanentDeleteDialogOpen}
+        onOpenChange={(open) => {
+          if (!open && !isPermanentDeleting) setPermanentDeleteDialogOpen(false);
+        }}
+      >
+        <DialogContent className="sm:max-w-md bg-white rounded-2xl p-6 shadow-2xl border border-rose-200">
+          <DialogHeader>
+            <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center mb-1">
+              <Trash2 className="w-5 h-5 text-rose-600" />
+            </div>
+            <DialogTitle className="text-lg font-bold text-slate-900">
+              Permanently Delete Application?
+            </DialogTitle>
+            <DialogDescription className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+              Are you sure you want to permanently delete application{" "}
+              <span className="font-mono font-bold text-slate-900">
+                {appState.applicationNumber}
+              </span>
+              ? This action will permanently remove this record from the admin archive and database. This action{" "}
+              <strong className="text-rose-600 font-semibold">cannot be undone</strong>.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-2 space-y-3">
+            <div className="p-3.5 rounded-xl bg-rose-50/70 border border-rose-200/90 text-xs sm:text-sm space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-600">Application Number:</span>
+                <span className="font-mono font-bold text-slate-900">
+                  {appState.applicationNumber}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-600">Business Name:</span>
+                <span className="font-bold text-slate-900">{appState.businessName}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-600">Owner / Applicant:</span>
+                <span className="text-slate-800 font-medium">{appState.ownerName}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-600">Current Archive Status:</span>
+                <Badge className="bg-slate-900 text-white border-slate-800 text-[10px] font-semibold">
+                  Archived / Deleted by Admin
+                </Badge>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-2.5 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <p className="leading-snug">
+                <strong>Warning:</strong> All records associated with this specific application will be permanently removed. The vendor&apos;s user account and other applications will not be affected.
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isPermanentDeleting}
+              onClick={() => setPermanentDeleteDialogOpen(false)}
+              className="text-xs font-semibold rounded-xl h-9"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={isPermanentDeleting}
+              onClick={handlePermanentDeleteConfirm}
+              className="text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white rounded-xl h-9 cursor-pointer gap-1.5"
+            >
+              {isPermanentDeleting ? (
+                <>
+                  <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin mr-1" />
+                  <span>Deleting permanently...</span>
+                </>
+              ) : (
+                <>
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Permanently Delete</span>
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
 
       {/* ================= VERIFY PAYMENT DIALOG ================= */}
       <Dialog

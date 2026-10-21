@@ -38,7 +38,6 @@ import {
   MapPin,
   Phone,
   ExternalLink,
-  Download,
   Copy,
   Check,
   ShieldCheck,
@@ -51,12 +50,21 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useStoredApplications, createApplication } from "@/lib/application-store";
+import type { VendorApplication } from "@/lib/types/vendor-application";
+import {
+  useStoredApplications,
+  createApplication,
+  useDeletedApplicationIds,
+  isApplicationDeleted,
+  isDemoOrMockApplication,
+} from "@/lib/application-store";
 import { exportVendorRegistryPDF } from "@/lib/vendor-registry-pdf";
 
 interface CertifiedVendorRecord {
-  id: string; // Vendor ID e.g. BUT-V-001248
-  applicationNumber: string;
+  recordId: string; // Stable, unique internal vendor record ID
+  vendorId: string; // Official municipal Vendor ID e.g. BUT-V-001248
+  id: string; // Vendor ID preserved for backward compatibility & PDF export
+  applicationNumber: string; // Application reference number e.g. BVR-2026-000002
   businessName: string;
   ownerName: string;
   category: string;
@@ -71,6 +79,7 @@ interface CertifiedVendorRecord {
 
 export default function AdminVendorsPage() {
   const storedApplications = useStoredApplications();
+  const deletedApplicationIds = useDeletedApplicationIds();
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedBarangay, setSelectedBarangay] = useState("All");
@@ -89,8 +98,13 @@ export default function AdminVendorsPage() {
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (data?.applications && Array.isArray(data.applications)) {
-          data.applications.forEach((app: any) => {
-            createApplication(app);
+          data.applications.forEach((app: VendorApplication) => {
+            if (
+              !isApplicationDeleted(app.id) &&
+              !isApplicationDeleted(app.applicationNumber)
+            ) {
+              createApplication(app);
+            }
           });
         }
       })
@@ -107,24 +121,59 @@ export default function AdminVendorsPage() {
   // Derive certified vendors purely from approved stored applications
   const combinedVendors: CertifiedVendorRecord[] = useMemo(() => {
     const list: CertifiedVendorRecord[] = [];
-    const seenVendorIds = new Set<string>();
+    const seenRecordKeys = new Set<string>();
+    const deletedSet = new Set(
+      deletedApplicationIds.map((id) => id.trim().toLowerCase())
+    );
 
     storedApplications.forEach((app) => {
+      // Exclude mock/demo application records
+      if (isDemoOrMockApplication(app)) return;
+
+      const normId = (app.id || "").trim().toLowerCase();
+      const normAppNum = (app.applicationNumber || "").trim().toLowerCase();
+
+      // Exclude deleted applications
+      if (
+        (normId && deletedSet.has(normId)) ||
+        (normAppNum && deletedSet.has(normAppNum)) ||
+        isApplicationDeleted(app.id) ||
+        isApplicationDeleted(app.applicationNumber)
+      ) {
+        return;
+      }
+
       if (app.status === "approved" || app.verificationStatus === "Verified") {
-        const vendorId = app.vendorId || "Pending Assignment";
-        const key = app.applicationNumber || app.id;
-        if (!seenVendorIds.has(key)) {
-          seenVendorIds.add(key);
+        const appRef = (app.applicationNumber || app.id || "").trim();
+        // Unique canonical internal record identifier
+        const internalRecordId = (app.id || appRef).trim();
+        const dedupeKey = `${internalRecordId}-${normAppNum}`;
+
+        if (!seenRecordKeys.has(dedupeKey)) {
+          seenRecordKeys.add(dedupeKey);
+
+          // Resolve municipal Vendor ID (distinct from internal record ID and application number)
+          let vendorId = app.vendorId?.trim();
+          if (!vendorId || vendorId === "Pending Assignment") {
+            const match = appRef.match(/(\d+)$/);
+            const seq = match ? match[1] : "";
+            vendorId = seq ? `BUT-V-${seq}` : "Pending Assignment";
+          }
+
+          const recordId = `vnd-rec-${internalRecordId}`;
+
           list.push({
-            id: vendorId,
-            applicationNumber: app.applicationNumber || app.id,
-            businessName: app.business.businessName || "Registered Business",
-            ownerName: app.owner.ownerName || "Registered Vendor",
-            category: app.business.category || "General Vending",
-            barangay: app.address.barangay || "Butuan City",
-            street: `${app.address.houseNo || ""} ${app.address.street || ""}`.trim() || "Butuan City",
-            contactNumber: app.contact.contactNumber || "N/A",
-            emailAddress: app.contact.emailAddress || "N/A",
+            recordId,
+            vendorId,
+            id: vendorId, // preserved for PDF export
+            applicationNumber: appRef,
+            businessName: app.business?.businessName || "Registered Business",
+            ownerName: app.owner?.ownerName || "Registered Vendor",
+            category: app.business?.category || "General Vending",
+            barangay: app.address?.barangay || "Butuan City",
+            street: `${app.address?.houseNo || ""} ${app.address?.street || ""}`.trim() || "Butuan City",
+            contactNumber: app.contact?.contactNumber || "N/A",
+            emailAddress: app.contact?.emailAddress || "N/A",
             certifiedDate: "Accredited",
             expiryDate: "Dec 31, 2026",
             status: "Certified Active",
@@ -134,7 +183,7 @@ export default function AdminVendorsPage() {
     });
 
     return list;
-  }, [storedApplications]);
+  }, [storedApplications, deletedApplicationIds]);
 
   // Filtered vendors
   const filteredVendors = useMemo(() => {
@@ -142,7 +191,9 @@ export default function AdminVendorsPage() {
       const q = searchQuery.toLowerCase().trim();
       const matchesSearch =
         !q ||
+        vendor.vendorId.toLowerCase().includes(q) ||
         vendor.id.toLowerCase().includes(q) ||
+        vendor.applicationNumber.toLowerCase().includes(q) ||
         vendor.businessName.toLowerCase().includes(q) ||
         vendor.ownerName.toLowerCase().includes(q) ||
         vendor.barangay.toLowerCase().includes(q) ||
@@ -470,20 +521,20 @@ export default function AdminVendorsPage() {
                     </TableRow>
                   ) : (
                     filteredVendors.map((vendor) => (
-                      <TableRow key={vendor.id} className="hover:bg-slate-50/60 transition-colors">
+                      <TableRow key={vendor.recordId} className="hover:bg-slate-50/60 transition-colors">
                         <TableCell className="py-3.5">
                           <div className="flex items-center gap-1.5">
                             <span className="font-mono text-xs font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                              {vendor.id}
+                              {vendor.vendorId}
                             </span>
-                            {vendor.id !== "Pending Assignment" && (
+                            {vendor.vendorId !== "Pending Assignment" && (
                               <button
                                 type="button"
-                                onClick={() => handleCopy(vendor.id)}
+                                onClick={() => handleCopy(vendor.vendorId)}
                                 className="p-1 text-slate-400 hover:text-blue-600 transition-colors"
                                 title="Copy Vendor ID"
                               >
-                                {copiedId === vendor.id ? (
+                                {copiedId === vendor.vendorId ? (
                                   <Check className="w-3.5 h-3.5 text-emerald-600" />
                                 ) : (
                                   <Copy className="w-3.5 h-3.5" />
@@ -581,12 +632,12 @@ export default function AdminVendorsPage() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {filteredVendors.map((vendor) => (
-              <Card key={vendor.id} className="bg-white border-slate-200/90 shadow-2xs hover:shadow-xs transition-shadow rounded-2xl overflow-hidden flex flex-col justify-between">
+              <Card key={vendor.recordId} className="bg-white border-slate-200/90 shadow-2xs hover:shadow-xs transition-shadow rounded-2xl overflow-hidden flex flex-col justify-between">
                 <div className="p-5 space-y-3.5">
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex items-center gap-2">
                       <span className="font-mono text-xs font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                        {vendor.id}
+                        {vendor.vendorId}
                       </span>
                       <Badge className="bg-emerald-100 text-emerald-900 border-emerald-300 text-[10px] font-bold py-0 h-5">
                         Active
@@ -673,7 +724,7 @@ export default function AdminVendorsPage() {
                         Assigned Vendor ID
                       </span>
                       <span className="font-mono text-base font-extrabold text-blue-900">
-                        {selectedVendor.id}
+                        {selectedVendor.vendorId}
                       </span>
                     </div>
 
@@ -741,7 +792,7 @@ export default function AdminVendorsPage() {
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={() => handleCopy(selectedVendor.id)}
+                    onClick={() => handleCopy(selectedVendor.vendorId)}
                     className="text-xs font-semibold gap-1.5"
                   >
                     <Copy className="w-3.5 h-3.5" />

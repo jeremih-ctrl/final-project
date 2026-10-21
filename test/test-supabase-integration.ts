@@ -41,14 +41,14 @@ async function runTests() {
 
   // Test 4: Profile synchronization
   console.log("\n[TEST 4] Testing profile synchronization...");
-  const syncRes = await dbSyncProfile(
+  await dbSyncProfile(
     "user_test_sync_12345",
     "Test Sync Vendor",
     "test.sync@butuan.gov.ph",
     "09123456789",
     "vendor"
   );
-  const fetchedProfile = (await dbGetProfile("user_test_sync_12345")) as Record<string, any>;
+  const fetchedProfile = (await dbGetProfile("user_test_sync_12345")) as Record<string, unknown>;
   if (!fetchedProfile || fetchedProfile.email !== "test.sync@butuan.gov.ph") {
     throw new Error(`Test 4 Failed: Profile not synced properly: ${JSON.stringify(fetchedProfile)}`);
   }
@@ -71,7 +71,7 @@ async function runTests() {
 
   // Test 6: Notifications
   console.log("\n[TEST 6] Testing notification creation and retrieval...");
-  const notif = await dbCreateNotification(
+  await dbCreateNotification(
     "user_3Kd0oEGh4eXYQXgVNWbZc4CKPkn",
     "BVR-2026-000002",
     "Test Notice: Business Permit Ready",

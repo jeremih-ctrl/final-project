@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSharedApplication } from "@/lib/vendor-application-state";
+import { useAppRole } from "@/lib/clerk-roles";
 import {
   VendorNotification,
   useVendorNotifications,
@@ -27,6 +28,7 @@ import {
 
 export default function VendorNotificationsPage() {
   const router = useRouter();
+  const { user: clerkUser } = useAppRole();
   const { application } = useSharedApplication();
   const [, setTick] = useState(0);
 
@@ -38,7 +40,8 @@ export default function VendorNotificationsPage() {
     return () => clearInterval(timer);
   }, []);
 
-  const appId = application?.applicationNumber || application?.id || "BVR-2026-001248";
+  const isSharedOwned = Boolean(application.userId && clerkUser?.id && application.userId === clerkUser.id);
+  const appId = isSharedOwned ? (application?.applicationNumber || application?.id || "") : "";
   const {
     notifications,
     unreadCount,

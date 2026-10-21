@@ -16,9 +16,7 @@ import {
   FileText,
   Info,
   Loader2,
-  RefreshCw,
   Send,
-  Sparkles,
   Upload,
   X,
   XCircle,
@@ -31,7 +29,6 @@ import {
 import { cn } from "@/lib/utils";
 import {
   MOCK_VENDOR_APPLICATION,
-  VendorAppStatus,
   useSharedApplication,
 } from "@/lib/vendor-application-state";
 import {
@@ -207,15 +204,8 @@ function SectionBreadcrumb({
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function CorrectionFormPage() {
-  const { application: app, status, updateStatus } = useSharedApplication();
+  const { application: app, status: demoStatus, updateStatus } = useSharedApplication();
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Status synced from shared application
-  const demoStatus = status;
-
-  function setDemoStatus(newStatus: VendorAppStatus) {
-    updateStatus(newStatus);
-  }
 
   // Step state
   const [step, setStep] = useState<SectionStep>("address");

@@ -37,12 +37,19 @@ import {
   QrCode,
   Landmark,
   Wallet,
-  ArrowRight,
   RefreshCw,
   Files,
   ExternalLink,
-  ChevronDown,
+  PlusCircle,
 } from "lucide-react";
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableHead,
+  TableRow,
+  TableCell,
+} from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { VendorApplication, PaymentInformation } from "@/lib/types/vendor-application";
 import { saveSharedApplication } from "@/lib/vendor-application-state";
@@ -209,14 +216,16 @@ function buildActivityTimeline(
 
 export default function VendorMyApplicationPage() {
   const searchParams = useSearchParams();
-  const requestedAppNumber = searchParams.get("appNumber") || searchParams.get("ref");
+  const requestedAppNumber = searchParams.get("appNumber") || searchParams.get("ref") || searchParams.get("id");
   const { user: clerkUser, isLoaded: isClerkLoaded, isSignedIn: isClerkSignedIn, email: clerkEmail } = useAppRole();
 
   // Application data state
   const [applications, setApplications] = useState<VendorApplication[]>([]);
   const [selectedAppId, setSelectedAppId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<"list" | "details">(requestedAppNumber ? "details" : "list");
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [isUnauthorizedRequestedApp, setIsUnauthorizedRequestedApp] = useState(false);
 
   // Clipboard copy state
   const [copied, setCopied] = useState(false);
@@ -227,7 +236,6 @@ export default function VendorMyApplicationPage() {
   const [viewCertificateOpen, setViewCertificateOpen] = useState(false);
 
   // Payment proof resubmit state
-  const [resubmitFile, setResubmitFile] = useState<File | null>(null);
   const [resubmitFileDataUrl, setResubmitFileDataUrl] = useState<string | null>(null);
   const [resubmitFilename, setResubmitFilename] = useState<string>("");
   const [resubmitFileType, setResubmitFileType] = useState<string>("");
@@ -236,14 +244,24 @@ export default function VendorMyApplicationPage() {
   const [resubmitMethodName, setResubmitMethodName] = useState("Maya / GCash (Official E-Wallet)");
   const [resubmitTxRef, setResubmitTxRef] = useState("");
   const [resubmitAmountPaid, setResubmitAmountPaid] = useState("");
-  const [resubmitPaymentDate, setResubmitPaymentDate] = useState("");
+  const resubmitPaymentDate = "";
   const [resubmitFileError, setResubmitFileError] = useState<string | null>(null);
   const [resubmitSuccessMessage, setResubmitSuccessMessage] = useState<string | null>(null);
   const [isSubmittingProof, setIsSubmittingProof] = useState(false);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
 
+  // Clear application state immediately on user change
+  const [prevUserId, setPrevUserId] = useState(clerkUser?.id);
+  if (clerkUser?.id !== prevUserId) {
+    setPrevUserId(clerkUser?.id);
+    setApplications([]);
+    setSelectedAppId(null);
+    setIsUnauthorizedRequestedApp(false);
+  }
+
   // Fetch applications linked to currently authenticated Clerk user
   const fetchVendorApplications = useCallback(async () => {
+    if (!clerkUser?.id) return;
     setIsLoading(true);
     setLoadError(null);
 
@@ -258,11 +276,16 @@ export default function VendorMyApplicationPage() {
       }
 
       const data = await res.json().catch(() => ({}));
-      const list: VendorApplication[] = Array.isArray(data?.applications)
+      const rawList: VendorApplication[] = Array.isArray(data?.applications)
         ? data.applications
         : data?.application
         ? [data.application]
         : [];
+
+      // Strict vendor isolation: only retain applications owned by authenticated Clerk user
+      const list = rawList.filter(
+        (app) => app.userId === clerkUser.id || (app as unknown as { clerkUserId?: string }).clerkUserId === clerkUser.id
+      );
 
       setApplications(list);
 
@@ -274,14 +297,27 @@ export default function VendorMyApplicationPage() {
               a.id?.toLowerCase() === requestedAppNumber.trim().toLowerCase() ||
               a.applicationNumber?.toLowerCase() === requestedAppNumber.trim().toLowerCase()
           );
-          setSelectedAppId(match ? match.applicationNumber || match.id : list[0].applicationNumber || list[0].id);
+          if (match) {
+            setSelectedAppId(match.applicationNumber || match.id);
+            saveSharedApplication(match);
+            setIsUnauthorizedRequestedApp(false);
+            setViewMode("details");
+          } else {
+            // Requested application reference does not belong to this vendor account!
+            setSelectedAppId(null);
+            setIsUnauthorizedRequestedApp(true);
+            return;
+          }
         } else {
           setSelectedAppId(list[0].applicationNumber || list[0].id);
+          saveSharedApplication(list[0]);
+          setIsUnauthorizedRequestedApp(false);
         }
-        // Sync shared state
-        saveSharedApplication(list[0]);
       } else {
         setSelectedAppId(null);
+        if (requestedAppNumber) {
+          setIsUnauthorizedRequestedApp(true);
+        }
       }
     } catch (err) {
       console.error("Failed to load vendor application:", err);
@@ -293,12 +329,20 @@ export default function VendorMyApplicationPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [requestedAppNumber]);
+  }, [clerkUser, requestedAppNumber]);
 
   useEffect(() => {
-    if (isClerkLoaded && isClerkSignedIn) {
-      fetchVendorApplications();
-    }
+    if (!isClerkLoaded || !isClerkSignedIn) return;
+    let cancelled = false;
+    (async () => {
+      await Promise.resolve();
+      if (!cancelled) {
+        fetchVendorApplications();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [isClerkLoaded, isClerkSignedIn, fetchVendorApplications]);
 
   // Resolve currently selected application
@@ -343,7 +387,6 @@ export default function VendorMyApplicationPage() {
       return;
     }
 
-    setResubmitFile(file);
     setResubmitFilename(file.name);
     setResubmitFileType(file.type || (isPdf ? "application/pdf" : "image/jpeg"));
     setResubmitFileSize(file.size);
@@ -506,7 +549,53 @@ export default function VendorMyApplicationPage() {
     );
   }
 
-  // ─── 3. Empty State (No Application for Authenticated User) ──────────────────
+  // ─── 3. Application Not Found / Access Denied (Unauthorized ID query) ───────
+  if (isUnauthorizedRequestedApp) {
+    return (
+      <div className="py-12 px-4 max-w-xl mx-auto">
+        <Card className="bg-white border border-slate-200/90 rounded-2xl p-6 sm:p-8 text-center space-y-4 shadow-sm">
+          <div className="w-14 h-14 rounded-2xl bg-amber-50 border border-amber-200 text-amber-600 mx-auto flex items-center justify-center">
+            <AlertTriangle className="w-7 h-7" />
+          </div>
+          <div className="space-y-1.5">
+            <Badge className="bg-amber-50 text-amber-700 border-amber-200 text-[11px] font-bold uppercase tracking-wider">
+              Application Not Found or Access Denied
+            </Badge>
+            <h2 className="text-xl font-bold text-slate-900">
+              Access Restricted
+            </h2>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              The requested application reference does not exist or you do not have permission to view it under this vendor account.
+            </p>
+          </div>
+          <div className="pt-2 flex flex-col sm:flex-row gap-2 justify-center">
+            <Link
+              href="/dashboard/my-application"
+              onClick={() => setIsUnauthorizedRequestedApp(false)}
+              className={cn(
+                buttonVariants({ variant: "default" }),
+                "bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs h-10 px-5 rounded-xl cursor-pointer shadow-xs gap-1.5 inline-flex items-center"
+              )}
+            >
+              <FileText className="w-4 h-4 mr-1.5" />
+              View My Applications
+            </Link>
+            <Link
+              href="/dashboard"
+              className={cn(
+                buttonVariants({ variant: "outline" }),
+                "text-xs font-semibold text-slate-700 h-10 rounded-xl"
+              )}
+            >
+              Back to Dashboard
+            </Link>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  // ─── 4. Empty State (No Application for Authenticated User) ──────────────────
   if (!activeApp) {
     return (
       <div className="py-12 px-4 max-w-xl mx-auto">
@@ -527,13 +616,13 @@ export default function VendorMyApplicationPage() {
           </div>
           <div className="pt-2 flex flex-col sm:flex-row gap-2 justify-center">
             <Link
-              href="/register"
+              href="/register?new=true"
               className={cn(
                 buttonVariants({ variant: "default" }),
-                "bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs h-10 px-5 rounded-xl cursor-pointer shadow-xs"
+                "bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs h-10 px-5 rounded-xl cursor-pointer shadow-xs gap-1.5 inline-flex items-center"
               )}
             >
-              <Building2 className="w-4 h-4 mr-2" />
+              <PlusCircle className="w-4 h-4 mr-1.5" />
               Start Vendor Registration
             </Link>
             <Link
@@ -552,7 +641,8 @@ export default function VendorMyApplicationPage() {
   }
 
   // ─── 4. Active Application Details ───────────────────────────────────────────
-  const currentStatus = normalizeStatus(activeApp.status);
+  const isArchivedDeleted = Boolean(activeApp.isDeleted);
+  const currentStatus = isArchivedDeleted ? "rejected" : normalizeStatus(activeApp.status);
   const applicationNumber = activeApp.applicationNumber || activeApp.id;
   const vendorId =
     activeApp.vendorId ||
@@ -568,13 +658,6 @@ export default function VendorMyApplicationPage() {
   const paymentBadge = getPaymentStatusBadgeConfig(paymentInfo?.status || "unpaid");
   const assessedAmount = paymentInfo?.assessedAmount ?? 1450;
   const amountPaid = paymentInfo?.amountPaid ?? 0;
-
-  const hasGovId = Boolean(
-    activeApp.documents &&
-      activeApp.documents.length > 0 &&
-      !activeApp.documents[0].isSkippedId
-  );
-  const govIdDoc = activeApp.documents?.[0];
 
   const statusConfig = {
     draft: {
@@ -668,91 +751,348 @@ export default function VendorMyApplicationPage() {
 
   return (
     <div className="space-y-6 sm:space-y-8 max-w-5xl mx-auto pb-12">
-      {/* ─── Multi-Application Switcher (if user owns more than 1 application) ─── */}
-      {applications.length > 1 && (
-        <Card className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-xs">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <Store className="w-4 h-4 text-blue-600" />
-              <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                Your Registered Applications ({applications.length})
-              </span>
+      {/* ─── Page Title, Tab Switcher & Send Another Application ─── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
+            My Applications
+          </h1>
+          <p className="text-xs sm:text-sm text-slate-500 mt-1">
+            Review and track all business registration applications filed under your account.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2.5">
+          <Link
+            href="/register?new=true"
+            className={cn(
+              buttonVariants({ variant: "default", size: "sm" }),
+              "bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs h-9 px-4 rounded-xl cursor-pointer shadow-xs gap-1.5 inline-flex items-center"
+            )}
+          >
+            <PlusCircle className="w-3.5 h-3.5" />
+            <span>Send Another Application</span>
+          </Link>
+        </div>
+      </div>
+
+      {/* View Switcher Tabs */}
+      <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
+        <button
+          type="button"
+          onClick={() => setViewMode("list")}
+          className={cn(
+            "px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-2",
+            viewMode === "list"
+              ? "bg-slate-900 text-white shadow-xs"
+              : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+          )}
+        >
+          <Files className="w-3.5 h-3.5" />
+          <span>All Applications ({applications.length})</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setViewMode("details")}
+          className={cn(
+            "px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-2",
+            viewMode === "details"
+              ? "bg-slate-900 text-white shadow-xs"
+              : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+          )}
+        >
+          <FileText className="w-3.5 h-3.5" />
+          <span>Application Details {activeApp ? `(${activeApp.applicationNumber || activeApp.id})` : ""}</span>
+        </button>
+      </div>
+
+      {/* ─── TAB 1: ALL APPLICATIONS TABLE VIEW ─── */}
+      {viewMode === "list" && (
+        <Card className="bg-white border border-slate-200/90 rounded-2xl shadow-xs overflow-hidden">
+          <CardHeader className="p-4 sm:p-5 border-b border-slate-100">
+            <div>
+              <CardTitle className="text-base font-bold text-slate-900">
+                Applications on File
+              </CardTitle>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Showing all business registration submissions associated with your account ({clerkEmail || clerkUser?.fullName}).
+              </p>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              {applications.map((app) => {
-                const appId = app.applicationNumber || app.id;
-                const isSelected = appId === selectedAppId;
-                const appStatus = normalizeStatus(app.status);
-                return (
-                  <button
-                    key={appId}
-                    type="button"
-                    onClick={() => setSelectedAppId(appId)}
-                    className={cn(
-                      "px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer flex items-center gap-2",
-                      isSelected
-                        ? "bg-blue-600 text-white border-blue-600 shadow-xs ring-2 ring-blue-500/20"
-                        : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
-                    )}
-                  >
-                    <span className="font-mono">{appId}</span>
-                    <span className="opacity-70 font-normal">
-                      • {app.business?.businessName || "Business"}
-                    </span>
-                    <span
-                      className={cn(
-                        "text-[10px] uppercase px-1.5 py-0.2 rounded font-bold",
-                        isSelected
-                          ? "bg-blue-700 text-white"
-                          : "bg-slate-200 text-slate-800"
-                      )}
-                    >
-                      {appStatus}
-                    </span>
-                  </button>
-                );
-              })}
+          </CardHeader>
+
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-slate-50/80">
+                    <TableHead className="font-bold text-xs text-slate-700">Reference #</TableHead>
+                    <TableHead className="font-bold text-xs text-slate-700">Business Name</TableHead>
+                    <TableHead className="font-bold text-xs text-slate-700">Submission Date</TableHead>
+                    <TableHead className="font-bold text-xs text-slate-700">Application Status</TableHead>
+                    <TableHead className="font-bold text-xs text-slate-700">Payment Status</TableHead>
+                    <TableHead className="font-bold text-xs text-slate-700">Last Updated</TableHead>
+                    <TableHead className="font-bold text-xs text-slate-700 text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {applications.map((app) => {
+                    const appId = app.applicationNumber || app.id;
+                    const isDel = Boolean(app.isDeleted);
+                    const pInfo = app.payment;
+                    const pBadge = getPaymentStatusBadgeConfig(pInfo?.status || "unpaid");
+                    const normStatus = normalizeStatus(app.status);
+
+                    return (
+                      <TableRow key={appId} className="hover:bg-slate-50/60 transition-colors">
+                        <TableCell className="font-mono font-bold text-xs text-slate-900">
+                          {appId}
+                        </TableCell>
+                        <TableCell className="text-xs font-medium text-slate-800">
+                          <div className="font-bold text-slate-900">{app.business?.businessName || "Unnamed Business"}</div>
+                          <div className="text-[11px] text-slate-500">{app.address?.barangay ? `${app.address.barangay}, Butuan City` : "Butuan City"}</div>
+                        </TableCell>
+                        <TableCell className="text-xs text-slate-600">
+                          {formatAppDate(app.submittedAt)}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          {isDel ? (
+                            <div className="flex flex-col gap-1 items-start">
+                              <Badge className="bg-rose-600 text-white border-rose-700 text-[10px] font-extrabold uppercase px-2 py-0.5">
+                                REJECTED
+                              </Badge>
+                              <Badge className="bg-rose-100 text-rose-900 border-rose-300 text-[10px] font-bold uppercase px-1.5 py-0.5">
+                                APPLICATION HAS BEEN DELETED BY THE ADMINISTRATOR
+                              </Badge>
+                            </div>
+                          ) : normStatus === "approved" ? (
+                            <Badge className="bg-emerald-100 text-emerald-900 border-emerald-300 text-[11px] font-bold">
+                              APPROVED
+                            </Badge>
+                          ) : normStatus === "needs-correction" ? (
+                            <Badge className="bg-orange-100 text-orange-950 border-orange-300 text-[11px] font-bold">
+                              NEEDS CORRECTION
+                            </Badge>
+                          ) : normStatus === "under-review" ? (
+                            <Badge className="bg-amber-100 text-amber-950 border-amber-300 text-[11px] font-bold">
+                              UNDER REVIEW
+                            </Badge>
+                          ) : (
+                            <Badge className="bg-blue-100 text-blue-900 border-blue-300 text-[11px] font-bold">
+                              SUBMITTED
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          <Badge className={cn("text-[10px] font-bold uppercase border", pBadge.badgeClass)}>
+                            {pBadge.label}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-xs text-slate-500">
+                          {formatAppDate(app.updatedAt)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setSelectedAppId(appId);
+                                saveSharedApplication(app);
+                                setViewMode("details");
+                              }}
+                              className="text-xs font-semibold h-7 px-2.5 rounded-lg border-slate-300 hover:bg-slate-100 cursor-pointer"
+                            >
+                              <Eye className="w-3.5 h-3.5 mr-1" />
+                              View Details
+                            </Button>
+                            {!isDel && normStatus === "needs-correction" && (
+                              <Link
+                                href={`/dashboard/my-application/correction?appNumber=${appId}`}
+                                className={cn(
+                                  buttonVariants({ variant: "default", size: "sm" }),
+                                  "bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold h-7 px-2.5 rounded-lg shadow-xs"
+                                )}
+                              >
+                                Correct
+                              </Link>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
             </div>
-          </div>
+          </CardContent>
         </Card>
       )}
 
-      {/* ─── Top Header Card ─── */}
-      <Card className="bg-white border border-slate-200/90 rounded-2xl p-5 sm:p-6 shadow-xs">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="space-y-1.5">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                Application Reference
-              </span>
-              <Badge className={cn("text-xs font-bold uppercase border", current.badgeColor)}>
-                {current.badgeText}
-              </Badge>
+      {/* ─── TAB 2: DETAILED APPLICATION VIEW ─── */}
+      {viewMode === "details" && (
+        <div className="space-y-6 sm:space-y-8">
+          {/* ─── Multi-Application Switcher (if user owns more than 1 application) ─── */}
+          {applications.length > 1 && (
+            <Card className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-xs">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <Store className="w-4 h-4 text-blue-600" />
+                  <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                    Select Application to Review ({applications.length})
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {applications.map((app) => {
+                    const appId = app.applicationNumber || app.id;
+                    const isSelected = appId === selectedAppId;
+                    const appStatus = normalizeStatus(app.status);
+                    const isAppDel = Boolean(app.isDeleted);
+                    return (
+                      <button
+                        key={appId}
+                        type="button"
+                        onClick={() => {
+                          setSelectedAppId(appId);
+                          saveSharedApplication(app);
+                        }}
+                        className={cn(
+                          "px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer flex items-center gap-2",
+                          isSelected
+                            ? "bg-blue-600 text-white border-blue-600 shadow-xs ring-2 ring-blue-500/20"
+                            : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                        )}
+                      >
+                        <span className="font-mono">{appId}</span>
+                        <span className="opacity-70 font-normal">
+                          • {app.business?.businessName || "Business"}
+                        </span>
+                        {isAppDel ? (
+                          <span className="text-[10px] uppercase px-1.5 py-0.2 rounded font-extrabold bg-rose-600 text-white">
+                            Archived
+                          </span>
+                        ) : (
+                          <span
+                            className={cn(
+                              "text-[10px] uppercase px-1.5 py-0.2 rounded font-bold",
+                              isSelected
+                                ? "bg-blue-700 text-white"
+                                : "bg-slate-200 text-slate-800"
+                            )}
+                          >
+                            {appStatus}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </Card>
+          )}
 
-              {/* Verification Status Badge */}
-              {currentStatus === "approved" || activeApp.verificationStatus === "Verified" || activeApp.isVerified ? (
-                <Badge className="bg-emerald-100 text-emerald-900 border-emerald-300 font-extrabold text-xs inline-flex items-center gap-1.5 py-0.5">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 stroke-[2.5]" />
-                  <span>Verified</span>
-                </Badge>
-              ) : currentStatus === "rejected" || activeApp.verificationStatus === "Not Verified" ? (
-                <Badge className="bg-slate-100 text-slate-800 border-slate-300 font-bold text-xs inline-flex items-center gap-1.5 py-0.5">
-                  <XCircle className="w-3.5 h-3.5 text-slate-600" />
-                  <span>Not Verified</span>
-                </Badge>
-              ) : (
-                <Badge className="bg-amber-100 text-amber-950 border-amber-300 font-bold text-xs inline-flex items-center gap-1.5 py-0.5">
-                  <Clock className="w-3.5 h-3.5 text-amber-600" />
-                  <span>Verification: Pending</span>
-                </Badge>
-              )}
+          {/* ─── Archival Notice Banner for Deleted Applications ─── */}
+          {isArchivedDeleted && (
+            <Card className="rounded-2xl bg-rose-50/95 border-2 border-rose-300 p-5 sm:p-6 shadow-xs space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                <div className="flex items-start gap-3.5">
+                  <div className="w-10 h-10 rounded-xl bg-rose-100 border border-rose-300 text-rose-700 flex items-center justify-center shrink-0 mt-0.5">
+                    <XCircle className="w-5 h-5 stroke-[2.5]" />
+                  </div>
+                  <div className="space-y-1.5 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge className="bg-rose-600 text-white border-rose-700 text-xs font-extrabold uppercase px-2.5 py-0.5">
+                        REJECTED
+                      </Badge>
+                      <Badge className="bg-rose-100 text-rose-900 border-rose-300 text-xs font-bold uppercase px-2.5 py-0.5">
+                        APPLICATION HAS BEEN DELETED BY THE ADMINISTRATOR
+                      </Badge>
+                      {activeApp.deletedAt && (
+                        <span className="text-xs text-rose-800 font-medium">
+                          Archived on {formatAppDate(activeApp.deletedAt)}
+                        </span>
+                      )}
+                    </div>
+                    <h2 className="text-base sm:text-lg font-bold text-rose-950">
+                      Application Has Been Deleted by the Administrator
+                    </h2>
+                    <p className="text-xs sm:text-sm text-rose-900 leading-relaxed max-w-3xl">
+                      {activeApp.deletedReason || activeApp.adminRemarks ? (
+                        <>
+                          Administrative Remarks: <strong className="font-semibold">&ldquo;{activeApp.deletedReason || activeApp.adminRemarks}&rdquo;</strong>
+                        </>
+                      ) : (
+                        "This rejected application was archived by the administrator. Historical records remain preserved in read-only mode for audit. The vendor cannot edit or resubmit this archived record. To register a new business or reapply under current regulations, please submit a separate application."
+                      )}
+                    </p>
+                    <p className="text-xs text-rose-800/90 pt-1">
+                      Status: <strong>Read-Only Historical Record</strong> • Modifications and resubmissions are disabled for this record.
+                    </p>
+                  </div>
+                </div>
 
-              {/* Payment Status Badge */}
-              <Badge className={cn("text-xs font-bold uppercase border inline-flex items-center gap-1.5 py-0.5", paymentBadge.badgeClass)}>
-                <CreditCard className="w-3.5 h-3.5" />
-                <span>Payment: {paymentBadge.label}</span>
-              </Badge>
-            </div>
+                <Link
+                  href="/register?new=true"
+                  className={cn(
+                    buttonVariants({ variant: "default", size: "default" }),
+                    "bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm cursor-pointer gap-2 shrink-0 self-start sm:self-center shadow-xs inline-flex items-center"
+                  )}
+                >
+                  <PlusCircle className="w-4 h-4" />
+                  <span>Send Another Application</span>
+                </Link>
+              </div>
+            </Card>
+          )}
+
+          {/* ─── Top Header Card ─── */}
+          <Card className="bg-white border border-slate-200/90 rounded-2xl p-5 sm:p-6 shadow-xs">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                    Application Reference
+                  </span>
+                  {isArchivedDeleted ? (
+                    <>
+                      <Badge className="bg-rose-600 text-white border-rose-700 text-xs font-extrabold uppercase">
+                        REJECTED
+                      </Badge>
+                      <Badge className="bg-rose-100 text-rose-900 border-rose-300 text-xs font-bold uppercase">
+                        APPLICATION HAS BEEN DELETED BY THE ADMINISTRATOR
+                      </Badge>
+                    </>
+                  ) : (
+                    <Badge className={cn("text-xs font-bold uppercase border", current.badgeColor)}>
+                      {current.badgeText}
+                    </Badge>
+                  )}
+
+                  {/* Verification Status Badge */}
+                  {!isArchivedDeleted && (currentStatus === "approved" || activeApp.verificationStatus === "Verified" || activeApp.isVerified) ? (
+                    <Badge className="bg-emerald-100 text-emerald-900 border-emerald-300 font-extrabold text-xs inline-flex items-center gap-1.5 py-0.5">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 stroke-[2.5]" />
+                      <span>Verified</span>
+                    </Badge>
+                  ) : isArchivedDeleted || currentStatus === "rejected" || activeApp.verificationStatus === "Not Verified" ? (
+                    <Badge className="bg-slate-100 text-slate-800 border-slate-300 font-bold text-xs inline-flex items-center gap-1.5 py-0.5">
+                      <XCircle className="w-3.5 h-3.5 text-slate-600" />
+                      <span>Not Verified</span>
+                    </Badge>
+                  ) : (
+                    <Badge className="bg-amber-100 text-amber-950 border-amber-300 font-bold text-xs inline-flex items-center gap-1.5 py-0.5">
+                      <Clock className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Verification: Pending</span>
+                    </Badge>
+                  )}
+
+                  {/* Payment Status Badge */}
+                  <Badge className={cn("text-xs font-bold uppercase border inline-flex items-center gap-1.5 py-0.5", paymentBadge.badgeClass)}>
+                    <CreditCard className="w-3.5 h-3.5" />
+                    <span>Payment: {paymentBadge.label}</span>
+                  </Badge>
+                </div>
 
             {/* Application Reference Number with Copy */}
             <div className="flex items-center gap-3 pt-0.5">
@@ -863,7 +1203,7 @@ export default function VendorMyApplicationPage() {
         )}
 
         {/* Direct Action: Review & Correct Application */}
-        {currentStatus === "needs-correction" && (
+        {currentStatus === "needs-correction" && !isArchivedDeleted && (
           <div className="pt-1 flex flex-wrap items-center gap-3">
             <Link
               href={`/dashboard/my-application/correction?appNumber=${applicationNumber}`}
@@ -1298,19 +1638,25 @@ export default function VendorMyApplicationPage() {
                 <span className="text-[11px] text-rose-700 font-medium">
                   Please review payment instructions and upload a valid transaction receipt.
                 </span>
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={() => {
-                    setResubmitAmountPaid(String(assessedAmount));
-                    setResubmitTxRef(paymentInfo?.transactionReference || "");
-                    setResubmitModalOpen(true);
-                  }}
-                  className="bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs h-8 px-3.5 rounded-lg cursor-pointer self-start sm:self-auto"
-                >
-                  <Upload className="w-3.5 h-3.5 mr-1" />
-                  Resubmit Proof of Payment
-                </Button>
+                {!isArchivedDeleted ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => {
+                      setResubmitAmountPaid(String(assessedAmount));
+                      setResubmitTxRef(paymentInfo?.transactionReference || "");
+                      setResubmitModalOpen(true);
+                    }}
+                    className="bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs h-8 px-3.5 rounded-lg cursor-pointer self-start sm:self-auto"
+                  >
+                    <Upload className="w-3.5 h-3.5 mr-1" />
+                    Resubmit Proof of Payment
+                  </Button>
+                ) : (
+                  <span className="text-[11px] text-slate-500 italic">
+                    Archived record — payment proof cannot be modified.
+                  </span>
+                )}
               </div>
             </div>
           ) : paymentBadge.label === "Pending Verification" ? (
@@ -1339,19 +1685,21 @@ export default function VendorMyApplicationPage() {
                   </span>
                 </div>
               </div>
-              <Button
-                type="button"
-                size="sm"
-                onClick={() => {
-                  setResubmitAmountPaid(String(assessedAmount));
-                  setResubmitTxRef(paymentInfo?.transactionReference || "");
-                  setResubmitModalOpen(true);
-                }}
-                className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs h-8 px-3.5 rounded-lg cursor-pointer shrink-0"
-              >
-                <Upload className="w-3.5 h-3.5 mr-1" />
-                Upload Proof of Payment
-              </Button>
+              {!isArchivedDeleted && (
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => {
+                    setResubmitAmountPaid(String(assessedAmount));
+                    setResubmitTxRef(paymentInfo?.transactionReference || "");
+                    setResubmitModalOpen(true);
+                  }}
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs h-8 px-3.5 rounded-lg cursor-pointer shrink-0"
+                >
+                  <Upload className="w-3.5 h-3.5 mr-1" />
+                  Upload Proof of Payment
+                </Button>
+              )}
             </div>
           )}
 
@@ -1662,6 +2010,8 @@ export default function VendorMyApplicationPage() {
           })}
         </CardContent>
       </Card>
+      </div>
+      )}
 
       {/* ─── MODAL: Resubmit / Upload Proof of Payment ─── */}
       <Dialog open={resubmitModalOpen} onOpenChange={setResubmitModalOpen}>
@@ -1822,7 +2172,6 @@ export default function VendorMyApplicationPage() {
                     <button
                       type="button"
                       onClick={() => {
-                        setResubmitFile(null);
                         setResubmitFileDataUrl(null);
                         setResubmitFilename("");
                         setResubmitFileType("");

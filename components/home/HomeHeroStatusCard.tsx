@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import {
@@ -17,113 +17,64 @@ import {
 import { CardContent, CardFooter } from "@/components/ui/card";
 import { TiltedCard } from "@/components/reactbits/TiltedCard";
 import { SpotlightCard } from "@/components/reactbits/SpotlightCard";
-import {
-  useStoredApplications,
-  useDeletedApplicationIds,
-  isDemoOrMockApplication,
-} from "@/lib/application-store";
-import { VendorApplication } from "@/lib/types/vendor-application";
+import { PublicOverviewStatistics } from "@/lib/public-analytics";
 
-export function HomeHeroStatusCard() {
-  const storedApplications = useStoredApplications();
-  const deletedApplicationIds = useDeletedApplicationIds();
+interface HomeHeroStatusCardProps {
+  initialStats?: PublicOverviewStatistics | null;
+}
 
-  // Filter out mock/demo records, invalid entries, and deleted records
-  const genuineApplications: VendorApplication[] = useMemo(() => {
-    const hasDeleted = deletedApplicationIds.length > 0;
-    const deletedSet = hasDeleted
-      ? new Set(deletedApplicationIds.map((id) => id.trim().toLowerCase()))
-      : null;
-    const seen = new Set<string>();
-    const list: VendorApplication[] = [];
+export function HomeHeroStatusCard({ initialStats }: HomeHeroStatusCardProps) {
+  const [stats, setStats] = useState<PublicOverviewStatistics | null>(initialStats || null);
+  const [isLoading, setIsLoading] = useState<boolean>(!initialStats);
+  const [hasError, setHasError] = useState<boolean>(false);
 
-    for (const app of storedApplications) {
-      if (isDemoOrMockApplication(app)) continue;
-      const normId = (app.applicationNumber || app.id || "").trim().toLowerCase();
-      if (!normId || seen.has(normId) || (deletedSet && deletedSet.has(normId))) continue;
-      seen.add(normId);
-      list.push(app);
-    }
-    return list;
-  }, [storedApplications, deletedApplicationIds]);
+  useEffect(() => {
+    let isMounted = true;
 
-  // 1. Total Genuine Applications
-  const totalApplicationsCount = genuineApplications.length;
-
-  // 2. Total Unique Registered Vendors (grouped separately by vendor identity)
-  const uniqueVendorsCount = useMemo(() => {
-    const set = new Set<string>();
-    genuineApplications.forEach((app) => {
-      const key = (
-        app.vendorId ||
-        app.contact?.emailAddress ||
-        app.owner?.ownerName ||
-        app.id
-      )
-        .trim()
-        .toLowerCase();
-      if (key) set.add(key);
-    });
-    return set.size;
-  }, [genuineApplications]);
-
-  // 3. Accepted (Approved) Applications
-  const acceptedApplicationsCount = useMemo(() => {
-    return genuineApplications.filter(
-      (app) =>
-        app.status?.toLowerCase() === "approved" ||
-        app.verificationStatus === "Verified"
-    ).length;
-  }, [genuineApplications]);
-
-  // 4. Acceptance Rate
-  const acceptanceRate =
-    totalApplicationsCount > 0
-      ? (acceptedApplicationsCount / totalApplicationsCount) * 100
-      : null;
-
-  // 5. Average Approval Time (calculated strictly with genuine timestamps)
-  const avgApprovalTimeFormatted = useMemo(() => {
-    const durationsMs: number[] = [];
-
-    genuineApplications.forEach((app) => {
-      const isApproved =
-        app.status?.toLowerCase() === "approved" ||
-        app.verificationStatus === "Verified";
-      if (!isApproved) return;
-
-      const subTime = app.submittedAt ? new Date(app.submittedAt).getTime() : NaN;
-      if (isNaN(subTime)) return;
-
-      let appTime = NaN;
-      if (app.statusHistory && app.statusHistory.length > 0) {
-        const historyItem = app.statusHistory.find(
-          (h) =>
-            (h.newStatus?.toLowerCase() === "approved" ||
-              h.action?.toLowerCase().includes("approved")) &&
-            h.timestamp
-        );
-        if (historyItem?.timestamp) {
-          appTime = new Date(historyItem.timestamp).getTime();
+    const fetchOverview = async (showLoadingSpinner = false) => {
+      if (showLoadingSpinner) setIsLoading(true);
+      try {
+        const res = await fetch("/api/public/overview", { cache: "no-store" });
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+        const data = await res.json();
+        if (data?.success && data?.stats) {
+          if (isMounted) {
+            setStats(data.stats);
+            setHasError(false);
+          }
+        } else {
+          throw new Error("Invalid payload format");
+        }
+      } catch (err) {
+        console.warn("Public overview statistics fetch error:", err);
+        if (isMounted) {
+          setHasError(true);
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
         }
       }
-      if (isNaN(appTime) && app.updatedAt) {
-        appTime = new Date(app.updatedAt).getTime();
-      }
+    };
 
-      if (!isNaN(appTime) && appTime >= subTime) {
-        durationsMs.push(appTime - subTime);
-      }
-    });
+    fetchOverview(!initialStats);
 
-    if (durationsMs.length === 0) return null;
-    const avgMs = durationsMs.reduce((a, b) => a + b, 0) / durationsMs.length;
+    // Refresh when application records change in this browser session
+    const handleStoreUpdate = () => {
+      fetchOverview(false);
+    };
 
-    if (avgMs < 60 * 1000) return "< 1 min";
-    if (avgMs < 60 * 60 * 1000) return `${Math.max(1, Math.round(avgMs / (60 * 1000)))} mins`;
-    if (avgMs < 24 * 60 * 60 * 1000) return `${(avgMs / (60 * 60 * 1000)).toFixed(1)} hrs`;
-    return `${(avgMs / (24 * 60 * 60 * 1000)).toFixed(1)} days`;
-  }, [genuineApplications]);
+    window.addEventListener("bvr_applications_store_updated", handleStoreUpdate);
+    window.addEventListener("storage", handleStoreUpdate);
+
+    return () => {
+      isMounted = false;
+      window.removeEventListener("bvr_applications_store_updated", handleStoreUpdate);
+      window.removeEventListener("storage", handleStoreUpdate);
+    };
+  }, [initialStats]);
 
   return (
     <div className="relative w-full max-w-sm sm:max-w-md mx-auto">
@@ -181,7 +132,13 @@ export function HomeHeroStatusCard() {
                     <Users className="w-3.5 h-3.5 text-blue-600" />
                   </div>
                   <div className="text-lg sm:text-xl font-extrabold text-slate-900 tracking-tight leading-snug">
-                    {uniqueVendorsCount}
+                    {isLoading && !stats ? (
+                      <span className="inline-block w-8 h-5 bg-slate-200 animate-pulse rounded" />
+                    ) : hasError && !stats ? (
+                      <span className="text-slate-400 font-normal text-sm" title="Statistics temporarily unavailable">—</span>
+                    ) : (
+                      stats?.totalRegisteredVendors ?? 0
+                    )}
                   </div>
                   <div className="text-[10px] text-slate-500 font-medium leading-tight">
                     Total Registered Vendors
@@ -197,7 +154,13 @@ export function HomeHeroStatusCard() {
                     <FileText className="w-3.5 h-3.5 text-indigo-600" />
                   </div>
                   <div className="text-lg sm:text-xl font-extrabold text-slate-900 tracking-tight leading-snug">
-                    {totalApplicationsCount}
+                    {isLoading && !stats ? (
+                      <span className="inline-block w-8 h-5 bg-slate-200 animate-pulse rounded" />
+                    ) : hasError && !stats ? (
+                      <span className="text-slate-400 font-normal text-sm" title="Statistics temporarily unavailable">—</span>
+                    ) : (
+                      stats?.applicationsReceived ?? 0
+                    )}
                   </div>
                   <div className="text-[10px] text-slate-500 font-medium leading-tight">
                     Applications Received
@@ -213,7 +176,13 @@ export function HomeHeroStatusCard() {
                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                   </div>
                   <div className="text-lg sm:text-xl font-extrabold text-slate-900 tracking-tight leading-snug">
-                    {acceptedApplicationsCount}
+                    {isLoading && !stats ? (
+                      <span className="inline-block w-8 h-5 bg-slate-200 animate-pulse rounded" />
+                    ) : hasError && !stats ? (
+                      <span className="text-slate-400 font-normal text-sm" title="Statistics temporarily unavailable">—</span>
+                    ) : (
+                      stats?.acceptedApplications ?? 0
+                    )}
                   </div>
                   <div className="text-[10px] text-slate-500 font-medium leading-tight">
                     Accepted Applications
@@ -229,7 +198,13 @@ export function HomeHeroStatusCard() {
                     <Percent className="w-3.5 h-3.5 text-sky-600" />
                   </div>
                   <div className="text-lg sm:text-xl font-extrabold text-slate-900 tracking-tight leading-snug">
-                    {acceptanceRate !== null ? `${acceptanceRate.toFixed(1)}%` : "0.0%"}
+                    {isLoading && !stats ? (
+                      <span className="inline-block w-12 h-5 bg-slate-200 animate-pulse rounded" />
+                    ) : hasError && !stats ? (
+                      <span className="text-slate-400 font-normal text-sm" title="Statistics temporarily unavailable">—</span>
+                    ) : (
+                      stats?.acceptanceRateFormatted ?? "0.0%"
+                    )}
                   </div>
                   <div className="text-[10px] text-slate-500 font-medium leading-tight">
                     Acceptance Rate
@@ -254,15 +229,21 @@ export function HomeHeroStatusCard() {
                 </div>
                 <div className="text-right">
                   <div className="font-bold text-slate-900 text-xs">
-                    {avgApprovalTimeFormatted !== null ? (
-                      avgApprovalTimeFormatted
+                    {isLoading && !stats ? (
+                      <span className="inline-block w-14 h-4 bg-slate-200 animate-pulse rounded" />
+                    ) : hasError && !stats ? (
+                      <span className="text-slate-400 font-normal italic text-[11px]">
+                        Unavailable
+                      </span>
+                    ) : stats?.averageApprovalTimeFormatted ? (
+                      stats.averageApprovalTimeFormatted
                     ) : (
                       <span className="text-slate-500 font-normal italic text-[11px]">
                         Data unavailable
                       </span>
                     )}
                   </div>
-                  {avgApprovalTimeFormatted === null && (
+                  {!isLoading && !hasError && !stats?.averageApprovalTimeFormatted && (
                     <div className="text-[9.5px] text-slate-400 leading-tight">Not enough data</div>
                   )}
                 </div>
@@ -300,6 +281,3 @@ export function HomeHeroStatusCard() {
     </div>
   );
 }
-
-// Alias export for clarity
-export { HomeHeroStatusCard as LguImpactDashboard };

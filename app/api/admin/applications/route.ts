@@ -1,12 +1,13 @@
-import { auth, clerkClient } from "@clerk/nextjs/server";
+import { auth, clerkClient, type User } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import {
   getAllPersistentApplicationsAsync,
   savePersistentApplicationAsync,
 } from "@/lib/server/vendor-applications-db";
 import { dbAddAuditLog } from "@/lib/supabase/server";
+import { isDemoOrMockApplication } from "@/lib/mock-filter";
 
-async function verifyAdminRole(): Promise<{ isAdmin: boolean; errorResponse?: NextResponse; user?: any }> {
+async function verifyAdminRole(): Promise<{ isAdmin: boolean; errorResponse?: NextResponse; user?: User }> {
   const { userId } = await auth();
   if (!userId) {
     return {
@@ -38,7 +39,8 @@ export async function GET() {
       return authCheck.errorResponse;
     }
 
-    const applications = await getAllPersistentApplicationsAsync();
+    const rawApplications = await getAllPersistentApplicationsAsync();
+    const applications = rawApplications.filter((app) => !isDemoOrMockApplication(app));
     return NextResponse.json({ success: true, applications });
   } catch (error) {
     console.error("Admin applications API error:", error);
@@ -60,6 +62,13 @@ export async function POST(req: Request) {
     if (!body || !body.id) {
       return NextResponse.json(
         { error: "Valid application data is required." },
+        { status: 400 }
+      );
+    }
+
+    if (isDemoOrMockApplication(body)) {
+      return NextResponse.json(
+        { error: "Synthetic and test application records cannot be saved to the live registry." },
         { status: 400 }
       );
     }

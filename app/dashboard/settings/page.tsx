@@ -31,8 +31,10 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSharedApplication } from "@/lib/vendor-application-state";
+import { useAppRole } from "@/lib/clerk-roles";
 
 export default function SettingsPage() {
+  const { user: clerkUser, email: clerkEmail } = useAppRole();
   const { application } = useSharedApplication();
 
   // Notification toggles
@@ -51,15 +53,18 @@ export default function SettingsPage() {
   // Feedback notification
   const [feedbackNotice, setFeedbackNotice] = useState<string | null>(null);
 
+  const isSharedOwned = Boolean(application.userId && clerkUser?.id && application.userId === clerkUser.id);
+
   const vendorEmail =
-    application.vendor?.email ||
-    application.email ||
-    "maria.santos@email.com";
+    (isSharedOwned ? (application.vendor?.email || application.email) : "") ||
+    clerkEmail ||
+    clerkUser?.primaryEmailAddress?.emailAddress ||
+    "";
   const vendorPhone =
-    application.vendor?.phone ||
-    application.contactNumber ||
-    "09181234567";
-  const appNumber = application.applicationNumber || application.id;
+    (isSharedOwned ? (application.vendor?.phone || application.contactNumber) : "") ||
+    clerkUser?.phoneNumbers?.[0]?.phoneNumber ||
+    "";
+  const appNumber = isSharedOwned ? (application.applicationNumber || application.id) : "";
 
   const handlePasswordSubmit = (e: React.FormEvent) => {
     e.preventDefault();

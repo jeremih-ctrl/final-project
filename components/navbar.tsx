@@ -13,7 +13,6 @@ import {
   ArrowRight,
   ShieldCheck,
   ChevronDown,
-  Building2,
   Search,
   LogIn,
 } from "lucide-react";
@@ -36,8 +35,16 @@ export function Navbar() {
 
   // Close menus on route change
   useEffect(() => {
-    setMobileMenuOpen(false);
-    setPortalDropdownOpen(false);
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) {
+        setMobileMenuOpen(false);
+        setPortalDropdownOpen(false);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [pathname]);
 
   // Handle click outside and Escape key to close dropdown

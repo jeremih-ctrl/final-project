@@ -34,6 +34,8 @@ export default function SignUpPage() {
             signInUrl="/login"
             fallbackRedirectUrl="/auth-redirect"
             forceRedirectUrl="/auth-redirect"
+            signInFallbackRedirectUrl="/auth-redirect"
+            signInForceRedirectUrl="/auth-redirect"
             appearance={{
               variables: {
                 colorPrimary: "#2563eb",

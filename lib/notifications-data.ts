@@ -210,194 +210,59 @@ export function formatRelativeTime(
   return diffInYears === 1 ? "1 year ago" : `${diffInYears} years ago`;
 }
 
-/** Realistic initial admin notifications */
-export function createInitialAdminNotifications(
-  refTime: number = Date.now()
-): AdminNotification[] {
-  return [
-    {
-      id: "adm-notif-1",
-      type: "new-application",
-      title: "New Vendor Application Submitted",
-      message:
-        "A new vendor registration application has been submitted and is ready for review.",
-      fullMessage:
-        "A new vendor registration has been submitted by Juan Dela Cruz for Juan's Food Stall in Baan KM 3. Queued for evaluation.",
-      applicationNumber: "BVR-2026-001248",
-      vendorName: "Juan's Food Stall",
-      status: "Submitted",
-      read: false,
-      createdAt: new Date(refTime - 5 * 60 * 1000).toISOString(),
-      actionLabel: "Review Application",
-      actionUrl: "/admin/applications/BVR-2026-001248",
-      href: "/admin/applications/BVR-2026-001248",
-      priority: "high",
-    },
-    {
-      id: "adm-notif-2",
-      type: "correction-submitted",
-      title: "Application Resubmitted for Review",
-      message: "The vendor has submitted the requested corrections for review.",
-      fullMessage:
-        "Vendor Juan Dela Cruz submitted corrected street address and replacement PhilSys ID for application BVR-2026-001248.",
-      applicationNumber: "BVR-2026-001248",
-      vendorName: "Juan's Food Stall",
-      status: "Under Review",
-      read: false,
-      createdAt: new Date(refTime - 18 * 60 * 1000).toISOString(),
-      actionLabel: "Review Application",
-      actionUrl: "/admin/applications/BVR-2026-001248",
-      href: "/admin/applications/BVR-2026-001248",
-      priority: "high",
-    },
-    {
-      id: "adm-notif-3",
-      type: "document-uploaded",
-      title: "Government ID Submitted for Verification",
-      message:
-        "A government ID has been submitted and is ready for verification.",
-      fullMessage:
-        "Uploaded credential philsys_national_id.jpg attached to BVR-2026-001248 is queued for document validity inspection.",
-      applicationNumber: "BVR-2026-001248",
-      vendorName: "Juan's Food Stall",
-      status: "Under Review",
-      read: true,
-      createdAt: new Date(refTime - 3 * 60 * 60 * 1000).toISOString(),
-      actionLabel: "Review Documents",
-      actionUrl: "/admin/documents",
-      href: "/admin/documents",
-      priority: "normal",
-    },
-    {
-      id: "adm-notif-4",
-      type: "new-application",
-      title: "New Vendor Application Submitted",
-      message:
-        "A new vendor registration application has been submitted and is ready for review.",
-      fullMessage:
-        "A new vendor registration has been submitted by Maria Santos for Maria's Sari-Sari Store.",
-      applicationNumber: "BVR-2026-001247",
-      vendorName: "Maria's Sari-Sari Store",
-      status: "Approved",
-      read: true,
-      createdAt: new Date(refTime - 25 * 60 * 60 * 1000).toISOString(),
-      actionLabel: "Review Application",
-      actionUrl: "/admin/applications/BVR-2026-001247",
-      href: "/admin/applications/BVR-2026-001247",
-      priority: "normal",
-    },
-    {
-      id: "adm-notif-5",
-      type: "new-application",
-      title: "New Vendor Application Submitted",
-      message:
-        "A new vendor registration application has been submitted and is ready for review.",
-      fullMessage:
-        "A new vendor registration has been submitted by Pedro Penduko for Pedro BBQ.",
-      applicationNumber: "BVR-2026-001246",
-      vendorName: "Pedro BBQ",
-      status: "Needs Correction",
-      read: true,
-      createdAt: new Date(refTime - 49 * 60 * 60 * 1000).toISOString(),
-      actionLabel: "Review Application",
-      actionUrl: "/admin/applications/BVR-2026-001246",
-      href: "/admin/applications/BVR-2026-001246",
-      priority: "normal",
-    },
-  ];
+/** Initial admin notifications: strictly empty to avoid fabricated records */
+export function createInitialAdminNotifications(): AdminNotification[] {
+  return [];
 }
 
-/** Realistic initial vendor notifications */
-export function createInitialVendorNotifications(
-  refTime: number = Date.now()
-): VendorNotification[] {
-  return [
-    {
-      id: "v-notif-1",
-      type: "correction-requested",
-      title: "Action Required: Application Correction",
-      message:
-        "Your vendor registration application requires corrections before it can be approved.",
-      fullMessage:
-        "An administrator has reviewed application BVR-2026-001248 and requested corrections. Please provide a clearer business address and replace the submitted government ID image with a readable copy.",
-      remarks:
-        "Please provide a clearer business address and replace the submitted government ID image with a readable copy.",
-      applicationNumber: "BVR-2026-001248",
-      vendorName: "Juan's Food Stall",
-      status: "Needs Correction",
-      read: false,
-      createdAt: new Date(refTime - 15 * 60 * 1000).toISOString(),
-      actionLabel: "Review Application",
-      actionUrl: "/dashboard/my-application/correction",
-      href: "/dashboard/my-application/correction",
-      priority: "high",
-    },
-    {
-      id: "v-notif-2",
-      type: "document-replacement",
-      title: "Government ID Replacement Required",
-      message:
-        "The submitted government ID could not be verified. Please provide a valid replacement document.",
-      fullMessage:
-        "The submitted government ID image for application BVR-2026-001248 was blurry or unreadable. Please upload a clear photo of your ID.",
-      applicationNumber: "BVR-2026-001248",
-      vendorName: "Juan's Food Stall",
-      status: "Needs Correction",
-      read: false,
-      createdAt: new Date(refTime - 3 * 60 * 60 * 1000).toISOString(),
-      actionLabel: "Update Documents",
-      actionUrl: "/dashboard/my-application/correction",
-      href: "/dashboard/my-application/correction",
-      priority: "high",
-    },
-    {
-      id: "v-notif-3",
-      type: "application-submitted",
-      title: "Application Submitted",
-      message:
-        "Your vendor registration application BVR-2026-001248 has been received by the City Government of Butuan Licensing Office.",
-      fullMessage:
-        "Your vendor registration application BVR-2026-001248 has been received and entered the administrative queue.",
-      applicationNumber: "BVR-2026-001248",
-      vendorName: "Juan's Food Stall",
-      status: "Submitted",
-      read: true,
-      createdAt: new Date(refTime - 25 * 60 * 60 * 1000).toISOString(),
-      actionLabel: "View Application Status",
-      actionUrl: "/application-status",
-      href: "/application-status",
-      priority: "normal",
-    },
-    {
-      id: "v-notif-4",
-      type: "system",
-      title: "Welcome to Butuan Vendor Portal",
-      message:
-        "Welcome to the official online vendor registration portal of Butuan City, Agusan del Norte.",
-      fullMessage:
-        "Welcome to the official vendor registry of Butuan City. Your vendor account has been initialized.",
-      applicationNumber: "BVR-2026-001248",
-      vendorName: "Juan's Food Stall",
-      status: "Active",
-      read: true,
-      createdAt: new Date(refTime - 49 * 60 * 60 * 1000).toISOString(),
-      actionLabel: "Go to Dashboard",
-      actionUrl: "/dashboard",
-      href: "/dashboard",
-      priority: "normal",
-    },
-  ];
+/** Initial vendor notifications: strictly empty to avoid fabricated records */
+export function createInitialVendorNotifications(): VendorNotification[] {
+  return [];
 }
 
-export const INITIAL_ADMIN_NOTIFICATIONS: AdminNotification[] =
-  createInitialAdminNotifications();
+export const INITIAL_ADMIN_NOTIFICATIONS: AdminNotification[] = [];
 
-export const INITIAL_VENDOR_NOTIFICATIONS: VendorNotification[] =
-  createInitialVendorNotifications();
+export const INITIAL_VENDOR_NOTIFICATIONS: VendorNotification[] = [];
 
 export const VENDOR_PRESET_TEMPLATES: Record<string, VendorNotification> = {
-  submitted: INITIAL_VENDOR_NOTIFICATIONS[2],
-  "correction-requested": INITIAL_VENDOR_NOTIFICATIONS[0],
+  submitted: {
+    id: "v-preset-submitted",
+    type: "application-submitted",
+    title: "Application Submitted",
+    message:
+      "Your vendor registration application has been received by the City Government of Butuan Licensing Office.",
+    fullMessage:
+      "Your vendor registration application has been received and entered the administrative queue.",
+    applicationNumber: "",
+    vendorName: "",
+    status: "Submitted",
+    read: true,
+    createdAt: new Date().toISOString(),
+    actionLabel: "View Application Status",
+    actionUrl: "/application-status",
+    href: "/application-status",
+    priority: "normal",
+  },
+  "correction-requested": {
+    id: "v-preset-corr-req",
+    type: "correction-requested",
+    title: "Action Required: Application Correction",
+    message:
+      "Your vendor registration application requires corrections before it can be approved.",
+    fullMessage:
+      "An administrator has reviewed your application and requested corrections. Please provide the required information.",
+    remarks:
+      "Please review the administrator remarks and submit requested corrections.",
+    applicationNumber: "",
+    vendorName: "",
+    status: "Needs Correction",
+    read: false,
+    createdAt: new Date().toISOString(),
+    actionLabel: "Review Application",
+    actionUrl: "/dashboard/my-application/correction",
+    href: "/dashboard/my-application/correction",
+    priority: "high",
+  },
   "correction-submitted": {
     id: "v-preset-corr-sub",
     type: "correction-submitted",
@@ -405,8 +270,8 @@ export const VENDOR_PRESET_TEMPLATES: Record<string, VendorNotification> = {
     message: "Your application corrections have been submitted for review.",
     fullMessage:
       "Your application corrections have been received. Administrative review has resumed.",
-    applicationNumber: "BVR-2026-001248",
-    vendorName: "Juan's Food Stall",
+    applicationNumber: "",
+    vendorName: "",
     status: "Under Review",
     read: false,
     createdAt: new Date().toISOString(),
@@ -422,10 +287,9 @@ export const VENDOR_PRESET_TEMPLATES: Record<string, VendorNotification> = {
     message:
       "Your vendor registration application has been approved by the City Government of Butuan.",
     fullMessage:
-      "Congratulations! Your vendor registration application BVR-2026-001248 has been approved. Official Vendor ID BUT-V-001248 issued.",
-    applicationNumber: "BVR-2026-001248",
-    vendorName: "Juan's Food Stall",
-    vendorId: "BUT-V-001248",
+      "Congratulations! Your vendor registration application has been approved.",
+    applicationNumber: "",
+    vendorName: "",
     status: "Approved",
     read: false,
     createdAt: new Date().toISOString(),
@@ -441,9 +305,9 @@ export const VENDOR_PRESET_TEMPLATES: Record<string, VendorNotification> = {
     message:
       "Your vendor registration application has been reviewed and rejected.",
     fullMessage:
-      "Your application was not approved during administrative review. Remarks: Outside municipal zoning.",
-    applicationNumber: "BVR-2026-001248",
-    vendorName: "Juan's Food Stall",
+      "Your application was not approved during administrative review.",
+    applicationNumber: "",
+    vendorName: "",
     status: "Rejected",
     read: false,
     createdAt: new Date().toISOString(),
@@ -478,8 +342,34 @@ export function getAdminNotifications(): AdminNotification[] {
       return adminCache;
     }
     const parsed = JSON.parse(raw);
-    adminCache = Array.isArray(parsed) ? parsed : INITIAL_ADMIN_NOTIFICATIONS;
-    lastAdminRaw = raw;
+    const valid = Array.isArray(parsed)
+      ? parsed.filter((n: AdminNotification) => {
+          const appNum = (n.applicationNumber || "").toLowerCase();
+          const name = (n.vendorName || "").toLowerCase();
+          const msg = (n.fullMessage || n.message || "").toLowerCase();
+          if (
+            appNum.includes("001248") ||
+            appNum.includes("001247") ||
+            appNum.includes("001246") ||
+            appNum.includes("000003") ||
+            appNum.includes("bvr-test-") ||
+            appNum.includes("001251") ||
+            appNum.includes("001252")
+          ) {
+            return false;
+          }
+          if (name.includes("santos") || name.includes("juan") || name.includes("pedro") || name.includes("synthetic")) {
+            return false;
+          }
+          if (msg.includes("maria santos") || msg.includes("juan dela cruz") || msg.includes("pedro")) {
+            return false;
+          }
+          return true;
+        })
+      : [];
+    adminCache = valid;
+    lastAdminRaw = JSON.stringify(valid);
+    localStorage.setItem(ADMIN_NOTIFICATIONS_STORAGE_KEY, lastAdminRaw);
     return adminCache;
   } catch {
     return INITIAL_ADMIN_NOTIFICATIONS;
@@ -531,7 +421,7 @@ export function markAllAdminNotificationsAsRead(): void {
 }
 
 export function resetAdminNotifications(): void {
-  const fresh = createInitialAdminNotifications(Date.now());
+  const fresh = createInitialAdminNotifications();
   saveAdminNotifications(fresh);
 }
 
@@ -559,8 +449,34 @@ export function getAllVendorNotifications(): VendorNotification[] {
       return vendorCache;
     }
     const parsed = JSON.parse(raw);
-    vendorCache = Array.isArray(parsed) ? parsed : INITIAL_VENDOR_NOTIFICATIONS;
-    lastVendorRaw = raw;
+    const valid = Array.isArray(parsed)
+      ? parsed.filter((n: VendorNotification) => {
+          const appNum = (n.applicationNumber || "").toLowerCase();
+          const name = (n.vendorName || "").toLowerCase();
+          const msg = (n.fullMessage || n.message || "").toLowerCase();
+          if (
+            appNum.includes("001248") ||
+            appNum.includes("001247") ||
+            appNum.includes("001246") ||
+            appNum.includes("000003") ||
+            appNum.includes("bvr-test-") ||
+            appNum.includes("001251") ||
+            appNum.includes("001252")
+          ) {
+            return false;
+          }
+          if (name.includes("santos") || name.includes("juan") || name.includes("pedro") || name.includes("synthetic")) {
+            return false;
+          }
+          if (msg.includes("maria santos") || msg.includes("juan dela cruz") || msg.includes("pedro")) {
+            return false;
+          }
+          return true;
+        })
+      : [];
+    vendorCache = valid;
+    lastVendorRaw = JSON.stringify(valid);
+    localStorage.setItem(VENDOR_NOTIFICATIONS_STORAGE_KEY, lastVendorRaw);
     return vendorCache;
   } catch {
     return INITIAL_VENDOR_NOTIFICATIONS;
@@ -624,7 +540,7 @@ export function markAllVendorNotificationsAsRead(): void {
 }
 
 export function resetVendorNotifications(): void {
-  const fresh = createInitialVendorNotifications(Date.now());
+  const fresh = createInitialVendorNotifications();
   saveVendorNotifications(fresh);
 }
 
