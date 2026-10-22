@@ -57,6 +57,7 @@ import {
   useDeletedApplicationIds,
   isApplicationDeleted,
   isDemoOrMockApplication,
+  setApplicationsFromRemote,
 } from "@/lib/application-store";
 import { exportVendorRegistryPDF } from "@/lib/vendor-registry-pdf";
 
@@ -80,6 +81,9 @@ interface CertifiedVendorRecord {
 export default function AdminVendorsPage() {
   const storedApplications = useStoredApplications();
   const deletedApplicationIds = useDeletedApplicationIds();
+  const [serverApps, setServerApps] = useState<VendorApplication[] | null>(null);
+  const [isLoadingServer, setIsLoadingServer] = useState(true);
+  const [serverError, setServerError] = useState<string | null>(null);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedBarangay, setSelectedBarangay] = useState("All");
@@ -93,25 +97,39 @@ export default function AdminVendorsPage() {
   } | null>(null);
 
   // Synchronize applications from server persistent store on mount
-  useEffect(() => {
+  const loadApplications = () => {
+    setIsLoadingServer(true);
+    setServerError(null);
     fetch("/api/admin/applications", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
+      .then(async (r) => {
+        if (!r.ok) {
+          const errData = await r.json().catch(() => ({}));
+          throw new Error(errData?.error || `HTTP ${r.status}: Failed to retrieve applications.`);
+        }
+        return r.json();
+      })
       .then((data) => {
         if (data?.applications && Array.isArray(data.applications)) {
-          data.applications.forEach((app: VendorApplication) => {
-            if (
-              !isApplicationDeleted(app.id) &&
-              !isApplicationDeleted(app.applicationNumber)
-            ) {
-              createApplication(app);
-            }
-          });
+          setServerApps(data.applications);
+          setApplicationsFromRemote(data.applications);
+        } else {
+          setServerApps([]);
         }
       })
       .catch((err) => {
-        console.error("Failed to load server applications for admin:", err);
+        console.error("Failed to load server applications for admin vendors:", err);
+        setServerError(err instanceof Error ? err.message : "Failed to load applications from server.");
+      })
+      .finally(() => {
+        setIsLoadingServer(false);
       });
+  };
+
+  useEffect(() => {
+    loadApplications();
   }, []);
+
+  const effectiveApps = serverApps !== null ? serverApps : storedApplications;
 
   // Certificate Modal State
   const [selectedVendor, setSelectedVendor] = useState<CertifiedVendorRecord | null>(null);
@@ -126,7 +144,7 @@ export default function AdminVendorsPage() {
       deletedApplicationIds.map((id) => id.trim().toLowerCase())
     );
 
-    storedApplications.forEach((app) => {
+    effectiveApps.forEach((app) => {
       // Exclude mock/demo application records
       if (isDemoOrMockApplication(app)) return;
 
@@ -183,7 +201,7 @@ export default function AdminVendorsPage() {
     });
 
     return list;
-  }, [storedApplications, deletedApplicationIds]);
+  }, [effectiveApps, deletedApplicationIds]);
 
   // Filtered vendors
   const filteredVendors = useMemo(() => {

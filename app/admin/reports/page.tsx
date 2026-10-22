@@ -31,30 +31,39 @@ import {
   useStoredApplications,
   useDeletedApplicationIds,
   isDemoOrMockApplication,
-  createApplication,
+  setApplicationsFromRemote,
 } from "@/lib/application-store";
 import type { VendorApplication } from "@/lib/types/vendor-application";
 
 export default function AdminReportsPage() {
   const storedApplications = useStoredApplications();
   const deletedApplicationIds = useDeletedApplicationIds();
+  const [serverApps, setServerApps] = useState<VendorApplication[] | null>(null);
+  const [isLoadingServer, setIsLoadingServer] = useState(true);
   const [downloadNotice, setDownloadNotice] = useState<string | null>(null);
 
   // Synchronize applications from server persistent database on mount
   useEffect(() => {
+    setIsLoadingServer(true);
     fetch("/api/admin/applications", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (data?.applications && Array.isArray(data.applications)) {
-          data.applications.forEach((app: VendorApplication) => {
-            createApplication(app);
-          });
+          setServerApps(data.applications);
+          setApplicationsFromRemote(data.applications);
+        } else {
+          setServerApps([]);
         }
       })
       .catch((err) => {
         console.error("Failed to load server applications for reports:", err);
+      })
+      .finally(() => {
+        setIsLoadingServer(false);
       });
   }, []);
+
+  const effectiveApps = serverApps !== null ? serverApps : storedApplications;
 
   // Dynamic calculations based solely on genuine stored applications
   const stats = useMemo(() => {
@@ -72,7 +81,7 @@ export default function AdminReportsPage() {
       );
     };
 
-    const genuineStored = storedApplications.filter(
+    const genuineStored = effectiveApps.filter(
       (app) => !isDemoOrMockApplication(app)
     );
 
@@ -121,18 +130,18 @@ export default function AdminReportsPage() {
       rejected,
       approvalRate,
     };
-  }, [storedApplications, deletedApplicationIds]);
+  }, [effectiveApps, deletedApplicationIds]);
 
   // Dynamic Barangays Distribution
   const barangayDistribution = useMemo(() => {
-    if (storedApplications.length === 0) return [];
+    if (effectiveApps.length === 0) return [];
     const counts: Record<string, number> = {};
-    storedApplications.forEach((app) => {
+    effectiveApps.forEach((app) => {
       const b = app.address.barangay || "Unspecified";
       counts[b] = (counts[b] || 0) + 1;
     });
 
-    const total = storedApplications.length;
+    const total = effectiveApps.length;
     return Object.entries(counts)
       .sort((a, b) => b[1] - a[1])
       .map(([name, count]) => ({
@@ -141,18 +150,18 @@ export default function AdminReportsPage() {
         percentage: Number(((count / total) * 100).toFixed(1)),
         status: count > 3 ? "High Concentration" : "Registered Zone",
       }));
-  }, [storedApplications]);
+  }, [effectiveApps]);
 
   // Dynamic Business Category Distribution
   const categoryDistribution = useMemo(() => {
-    if (storedApplications.length === 0) return [];
+    if (effectiveApps.length === 0) return [];
     const counts: Record<string, number> = {};
-    storedApplications.forEach((app) => {
+    effectiveApps.forEach((app) => {
       const cat = app.business.category || "General Vending";
       counts[cat] = (counts[cat] || 0) + 1;
     });
 
-    const total = storedApplications.length;
+    const total = effectiveApps.length;
     return Object.entries(counts)
       .sort((a, b) => b[1] - a[1])
       .map(([category, count]) => ({
@@ -160,7 +169,7 @@ export default function AdminReportsPage() {
         count,
         percent: `${((count / total) * 100).toFixed(1)}%`,
       }));
-  }, [storedApplications]);
+  }, [effectiveApps]);
 
   // CSV Generator Helper
   const triggerCSVDownload = (filename: string, headers: string[], rows: (string | number)[][]) => {

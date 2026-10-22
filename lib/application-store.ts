@@ -284,6 +284,39 @@ export function createApplication(application: VendorApplication): VendorApplica
   return newApp;
 }
 
+/**
+ * Atomically synchronizes applications retrieved from the authoritative server API
+ * into the client application store. Replaces and merges genuine remote applications
+ * without causing multiple rapid re-renders or event storming.
+ */
+export function setApplicationsFromRemote(
+  serverApplications: VendorApplication[]
+): VendorApplication[] {
+  if (!Array.isArray(serverApplications)) return [];
+  const genuine = serverApplications.filter((app) => !isDemoOrMockApplication(app));
+
+  if (!isBrowser()) {
+    return genuine;
+  }
+
+  // Preserve deleted status flags if tracked in deletedStore
+  const deletedIds = getDeletedStoreSnapshot();
+  const reconciled = genuine.map((app) => {
+    const isDeletedAlready =
+      Boolean(app.isDeleted) ||
+      deletedIds.includes((app.id || "").trim().toLowerCase()) ||
+      deletedIds.includes((app.applicationNumber || "").trim().toLowerCase());
+
+    return {
+      ...app,
+      isDeleted: isDeletedAlready,
+    };
+  });
+
+  saveApplicationsToStorage(reconciled);
+  return reconciled;
+}
+
 // ─── 4. updateApplication ─────────────────────────────────────────────────────
 
 export type UpdateApplicationInput = Partial<

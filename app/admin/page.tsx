@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import Link from "next/link";
-import { buttonVariants } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import {
@@ -12,12 +12,14 @@ import {
   AlertCircle,
   FileText,
   Archive,
+  RefreshCw,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   useStoredApplications,
   useDeletedApplicationIds,
-  createApplication,
+  setApplicationsFromRemote,
 } from "@/lib/application-store";
 import { computeAdminDashboardAnalytics } from "@/lib/admin-analytics";
 import type { VendorApplication } from "@/lib/types/vendor-application";
@@ -25,27 +27,58 @@ import type { VendorApplication } from "@/lib/types/vendor-application";
 export default function AdminDashboardPage() {
   const storedApplications = useStoredApplications();
   const deletedApplicationIds = useDeletedApplicationIds();
+  const [serverApps, setServerApps] = useState<VendorApplication[] | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
-  // Synchronize applications from server persistent database on mount
-  useEffect(() => {
+  // Authoritative server data fetch
+  const loadApplications = useCallback(() => {
+    setIsLoading(true);
+    setFetchError(null);
     fetch("/api/admin/applications", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
+      .then(async (r) => {
+        if (!r.ok) {
+          const errData = await r.json().catch(() => ({}));
+          throw new Error(errData?.error || `HTTP ${r.status}: Failed to retrieve registry records.`);
+        }
+        return r.json();
+      })
       .then((data) => {
         if (data?.applications && Array.isArray(data.applications)) {
-          data.applications.forEach((app: VendorApplication) => {
-            createApplication(app);
-          });
+          setServerApps(data.applications);
+          setApplicationsFromRemote(data.applications);
+        } else {
+          setServerApps([]);
         }
       })
       .catch((err) => {
         console.error("Failed to load server applications for admin dashboard:", err);
+        setFetchError(
+          err instanceof Error ? err.message : "Unable to retrieve registry records from the server."
+        );
+      })
+      .finally(() => {
+        setIsLoading(false);
       });
   }, []);
 
+  // Synchronize applications from server persistent database on mount
+  useEffect(() => {
+    loadApplications();
+  }, [loadApplications]);
+
+  // Use authoritative server data once loaded, falling back to storedApplications only if cached
+  const effectiveApps = useMemo(() => {
+    if (serverApps !== null) {
+      return serverApps;
+    }
+    return storedApplications;
+  }, [serverApps, storedApplications]);
+
   // Compute canonical municipal statistics and status distribution
   const stats = useMemo(() => {
-    return computeAdminDashboardAnalytics(storedApplications, deletedApplicationIds);
-  }, [storedApplications, deletedApplicationIds]);
+    return computeAdminDashboardAnalytics(effectiveApps, deletedApplicationIds);
+  }, [effectiveApps, deletedApplicationIds]);
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto w-full">
@@ -66,6 +99,19 @@ export default function AdminDashboardPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={loadApplications}
+            disabled={isLoading}
+            className="h-9 px-3 rounded-xl border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer gap-1.5"
+            title="Reload registry records from server"
+          >
+            <RefreshCw className={cn("w-3.5 h-3.5", isLoading && "animate-spin")} />
+            <span className="hidden sm:inline">Refresh</span>
+          </Button>
+
           <Link
             href="/admin/applications"
             className={cn(
@@ -78,6 +124,27 @@ export default function AdminDashboardPage() {
           </Link>
         </div>
       </div>
+
+      {/* Honest Error Banner if Database Request Fails */}
+      {fetchError && effectiveApps.length === 0 && (
+        <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-900 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
+            <div>
+              <p className="text-xs font-bold text-rose-800">Connection or Authorization Issue</p>
+              <p className="text-xs text-rose-700">{fetchError}</p>
+            </div>
+          </div>
+          <Button
+            onClick={loadApplications}
+            variant="outline"
+            size="sm"
+            className="h-8 border-rose-300 text-rose-800 hover:bg-rose-100 text-xs shrink-0 rounded-xl cursor-pointer"
+          >
+            Retry Loading
+          </Button>
+        </div>
+      )}
 
       {/* 2. Summary Statistics Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">

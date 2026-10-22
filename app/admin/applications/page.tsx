@@ -60,6 +60,7 @@ import {
   deleteAdminApplicationRecord,
   permanentlyDeleteApplication,
   isDemoOrMockApplication,
+  setApplicationsFromRemote,
   createApplication,
 } from "@/lib/application-store";
 import { cn } from "@/lib/utils";
@@ -87,26 +88,49 @@ function formatSubmittedDate(dateStr: string | null | undefined): string {
 export default function AdminApplicationsPage() {
   const storedApplications = useStoredApplications();
   const deletedApplicationIds = useDeletedApplicationIds();
+  const [serverApps, setServerApps] = useState<VendorApplication[] | null>(null);
+  const [isLoadingServer, setIsLoadingServer] = useState(true);
+  const [serverError, setServerError] = useState<string | null>(null);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStatus, setSelectedStatus] = useState<string>("All");
   const [selectedBarangay, setSelectedBarangay] = useState<string>("All Barangays");
   const [selectedPaymentStatus, setSelectedPaymentStatus] = useState<string>("All");
 
   // Fetch and synchronize persistent applications from server database
-  useEffect(() => {
+  const loadApplications = () => {
+    setIsLoadingServer(true);
+    setServerError(null);
     fetch("/api/admin/applications", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
+      .then(async (r) => {
+        if (!r.ok) {
+          const errData = await r.json().catch(() => ({}));
+          throw new Error(errData?.error || `HTTP ${r.status}: Failed to retrieve applications.`);
+        }
+        return r.json();
+      })
       .then((data) => {
         if (data?.applications && Array.isArray(data.applications)) {
-          data.applications.forEach((app: VendorApplication) => {
-            createApplication(app);
-          });
+          setServerApps(data.applications);
+          setApplicationsFromRemote(data.applications);
+        } else {
+          setServerApps([]);
         }
       })
       .catch((err) => {
         console.error("Failed to load server applications for admin:", err);
+        setServerError(err instanceof Error ? err.message : "Failed to load applications from server.");
+      })
+      .finally(() => {
+        setIsLoadingServer(false);
       });
+  };
+
+  useEffect(() => {
+    loadApplications();
   }, []);
+
+  const effectiveApps = serverApps !== null ? serverApps : storedApplications;
 
   // Deletion confirmation dialog state
   const [deleteTargetApp, setDeleteTargetApp] = useState<AdminApplication | null>(null);
@@ -250,7 +274,7 @@ export default function AdminApplicationsPage() {
       rejected: "Rejected",
     };
 
-    const genuineStored = storedApplications.filter(
+    const genuineStored = effectiveApps.filter(
       (app) => !isDemoOrMockApplication(app)
     );
 
@@ -355,7 +379,7 @@ export default function AdminApplicationsPage() {
     }
 
     return deduplicated.sort((a, b) => b.sortTime - a.sortTime);
-  }, [storedApplications, deletedApplicationIds]);
+  }, [effectiveApps, deletedApplicationIds]);
 
   // Client-side filtering
   const filteredApplications = useMemo(() => {

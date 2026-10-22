@@ -113,34 +113,70 @@ export async function getAllPersistentApplicationsAsync(): Promise<VendorApplica
 
 /**
  * Async: Finds all applications owned by a Clerk user ID from Supabase database.
+ * If no application is found by Clerk user ID and userEmail is provided, reconciles
+ * with existing registered application matching the verified email.
  */
 export async function getPersistentApplicationsByUserIdAsync(
-  userId: string
+  userId: string,
+  userEmail?: string
 ): Promise<VendorApplication[]> {
   if (!userId) return [];
   try {
     const dbApps = await dbGetVendorApplications(userId);
-    if (Array.isArray(dbApps)) {
+    if (Array.isArray(dbApps) && dbApps.length > 0) {
       const genuineApps = dbApps.filter(
         (app) =>
           !isDemoOrMockApplication(app) &&
           (app.userId === userId || (app as unknown as { clerkUserId?: string }).clerkUserId === userId)
       );
-      return genuineApps;
+      if (genuineApps.length > 0) {
+        return genuineApps;
+      }
     }
   } catch (err) {
     console.warn("Supabase dbGetVendorApplications warning, falling back to disk cache:", err);
   }
-  return getPersistentApplicationsByUserId(userId);
+
+  // Safe Account Reconciliation: If no application was linked to userId alone, but userEmail was supplied,
+  // locate existing legitimate application by verified email and associate with this Clerk user ID
+  if (userEmail) {
+    try {
+      const allDb = await dbGetAllApplications();
+      if (Array.isArray(allDb)) {
+        const normEmail = userEmail.trim().toLowerCase();
+        const matchedApp = allDb.find((a) => {
+          if (isDemoOrMockApplication(a)) return false;
+          const aEmail = (a.contact?.emailAddress || a.verifiedEmail || "").trim().toLowerCase();
+          return aEmail === normEmail;
+        });
+
+        if (matchedApp) {
+          console.log(
+            `[ACCOUNT RECONCILIATION] Linking application ${matchedApp.applicationNumber || matchedApp.id} to Clerk user ${userId} for email ${userEmail}`
+          );
+          matchedApp.userId = userId;
+          await dbSaveVendorApplication(matchedApp).catch((e) => {
+            console.warn("Failed to persist reconciled Clerk user ID to Supabase:", e);
+          });
+          return [matchedApp];
+        }
+      }
+    } catch (err) {
+      console.warn("Email reconciliation lookup warning:", err);
+    }
+  }
+
+  return getPersistentApplicationsByUserId(userId, userEmail);
 }
 
 /**
  * Async: Finds a single application by Clerk user ID from Supabase.
  */
 export async function getPersistentApplicationByUserIdAsync(
-  userId: string
+  userId: string,
+  userEmail?: string
 ): Promise<VendorApplication | null> {
-  const apps = await getPersistentApplicationsByUserIdAsync(userId);
+  const apps = await getPersistentApplicationsByUserIdAsync(userId, userEmail);
   return apps.find((a) => !a.isDeleted) || apps[0] || null;
 }
 
@@ -165,21 +201,36 @@ export async function getPersistentApplicationByIdAsync(
 /**
  * Sync: Finds an application by its Clerk user ID from local cache.
  */
-export function getPersistentApplicationByUserId(userId: string): VendorApplication | null {
+export function getPersistentApplicationByUserId(userId: string, userEmail?: string): VendorApplication | null {
   if (!userId) return null;
-  const userApps = getPersistentApplicationsByUserId(userId);
+  const userApps = getPersistentApplicationsByUserId(userId, userEmail);
   return userApps.find((a) => !a.isDeleted) || userApps[0] || null;
 }
 
 /**
  * Sync: Finds all applications owned by a Clerk user ID from local cache.
  */
-export function getPersistentApplicationsByUserId(userId: string): VendorApplication[] {
+export function getPersistentApplicationsByUserId(userId: string, userEmail?: string): VendorApplication[] {
   if (!userId) return [];
   const applications = getAllPersistentApplications();
-  return applications.filter(
+  let matched = applications.filter(
     (app) => app.userId === userId || (app as unknown as { clerkUserId?: string }).clerkUserId === userId
   );
+  if (matched.length === 0 && userEmail) {
+    const normEmail = userEmail.trim().toLowerCase();
+    matched = applications.filter((app) => {
+      if (isDemoOrMockApplication(app)) return false;
+      const aEmail = (app.contact?.emailAddress || app.verifiedEmail || "").trim().toLowerCase();
+      return aEmail === normEmail;
+    });
+    if (matched.length > 0) {
+      matched.forEach((app) => {
+        app.userId = userId;
+      });
+      saveAllPersistentApplications(applications);
+    }
+  }
+  return matched;
 }
 
 /**

@@ -22,7 +22,16 @@ export async function GET(req: Request) {
       searchParams.get("id") ||
       searchParams.get("ref");
 
-    const rawApplications = await getPersistentApplicationsByUserIdAsync(userId);
+    let userEmail: string | undefined = undefined;
+    try {
+      const client = typeof clerkClient === "function" ? await clerkClient() : clerkClient;
+      const user = await client.users.getUser(userId);
+      userEmail = user?.primaryEmailAddress?.emailAddress || user?.emailAddresses?.[0]?.emailAddress;
+    } catch {
+      // Safe fallback if Clerk Backend API is temporarily unreachable
+    }
+
+    const rawApplications = await getPersistentApplicationsByUserIdAsync(userId, userEmail);
 
     // Enforce strict vendor data isolation:
     // Guarantee that every record strictly belongs to the authenticated Clerk user ID
